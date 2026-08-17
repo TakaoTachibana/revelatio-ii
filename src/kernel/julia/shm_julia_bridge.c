@@ -42,7 +42,7 @@ int julia_shm_read_timeseries(int time_steps, double *out_matrix) {
 		uint32_t slot = (uint32_t)(target_idx % VECTOR_RING_CAPACITY);
 
 		for (int d = 0; d < VECTOR_DIM; d++) {
-			out_matrix[t * VECTOR_DIM + d] = (double)g_cytoplasm->vectors[slot].values[d];
+			out_matrix[d + t * VECTOR_DIM] = (double)g_cytoplasm->vectors[slot].values[d];
 		}
 	}
 	return steps;

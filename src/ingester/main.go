@@ -70,7 +70,7 @@ func ExtractFeatureVector128(text string) [128]float32 {
 
 	var normSq float32
 	for i := 0; i < 128; i++ {
-		normSq += vec[i] + vec[i]
+		normSq += vec[i] * vec[i]
 	}
 	if normSq > 0 {
 		norm := float32(math.Sqrt(float64(normSq)))
@@ -118,7 +118,7 @@ func main() {
 
 	conn, _, err := websocket.DefaultDialer.Dial(JetstreamEndpoint, nil)
 	if err != nil {
-		log.Fatal("[FATAL] WebSoket connection error: %v", err)
+		log.Fatalf("[FATAL] WebSoket connection error: %v", err)
 	}
 	defer conn.Close()
 

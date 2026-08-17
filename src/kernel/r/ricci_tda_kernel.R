@@ -13,7 +13,7 @@ dyn.load("shm_r_bridge.so")
 attach_shm <- function() {
 	res <- .C("r_shm_attach", status = integer(1))
 	if (res$status != 0) {
-		stop(paste("[R-Kernel FATAL] Cannot attach to Cytoplasm IV. Code:", res$stattus))
+		stop(paste("[R-Kernel FATAL] Cannot attach to Cytoplasm IV. Code:", res$status))
 	}
 	cat("[R-Kernel] Attached to Cytoplasm IV Shared Memory (512MB)\n")
 }

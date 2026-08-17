@@ -26,7 +26,7 @@ function attach_shm()
 end
 
 function read_header(ctx::SHMContext)
-	raw_hdr = zeros(UInt8, 64)
+	raw_hdr = zeros(UInt8, 256)
 	ccall((:julia_shm_read_header_raw, LIB_SHM_BRIDGE), Cvoid, (Ptr{UInt8},), raw_hdr)
 
 	write_index = reinterpret(UInt64, raw_hdr[1:8])[1]
@@ -46,7 +46,7 @@ function read_timeseries(ctx::SHMContext, time_steps::Int = 120)
 	if steps == 0
 		return Matrix{Float64}(undef, 0, 0)
 	end 
-	return out_matrix[:, 1:steps]
+	return copy(out_matrix[:, 1:steps])
 end
 
 function write_sindy_coefficients_and_reset(cts::SHMContext, coeffs::Vector{Float64})

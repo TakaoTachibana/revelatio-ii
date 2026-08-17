@@ -66,7 +66,7 @@ void r_shm_update_metrics(double *mean_ricci, double *h1_persistence, double *h2
 
 	g_cytoplasm->header.mean_ricci_curvature = *mean_ricci;
 	g_cytoplasm->coefficients.tda_h1_persistence = *h1_persistence;
-	g_cytoplasm->coefficients.tda_h1_persistence = *h2_persistence;
+	g_cytoplasm->coefficients.tda_h2_persistence = *h2_persistence;
 	g_cytoplasm->header.state_flags = (uint32_t)(*state_flags);
 }
 
