@@ -40,6 +40,7 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
+<<<<<<< HEAD
 docs/
   ARCHITECTURE2.md
 include/
@@ -65,12 +66,24 @@ tests/
 .gitignore
 ARCHITECUTURE.md
 go.mod
+=======
+src/
+  kernel/
+    julia/
+      shm_julia_bridge.so
+    r/
+      shm_r_bridge.so
+tests/
+  test_shm
+ARCHITECUTURE.md
+>>>>>>> origin/master
 README.md
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
 
+<<<<<<< HEAD
 <file path="docs/ARCHITECTURE2.md">
 # REVELATIO II : System Engineering, Mathematical, & Phenomenological Specification
 ### Dual-Layer Tensor-Field & Graph-PDE Autopoietic Sensing Engine
@@ -1587,6 +1600,8 @@ int main(void) {
 }
 </file>
 
+=======
+>>>>>>> origin/master
 <file path="ARCHITECUTURE.md">
 # REVELATIO II : System Engineering & Mathematical Specification
 ### Dual-Layer Tensor-Field & Graph-PDE Autopoietic Sensing Engine
@@ -1773,6 +1788,7 @@ CREATE TABLE IF NOT EXISTS critical_trigger_posts_v2 (
     *   WebUI 上でメッシュが赤色スパイク形状に変形し、抽出された起爆ポストが 3D 空間上の特異点座標に正確にバインドされてホログラフィック表示されることを確認する。
 </file>
 
+<<<<<<< HEAD
 <file path="go.mod">
 module github.com/TakaoTachibana/revelatio-ii
 
@@ -1781,6 +1797,8 @@ go 1.26.5
 require github.com/gorilla/websocket v1.5.3
 </file>
 
+=======
+>>>>>>> origin/master
 <file path="README.md">
 # REVELATIO II
 > **Dual-Layer Tensor-Field & Graph-PDE Autopoietic Sensing Engine**
@@ -1805,6 +1823,7 @@ REVELATIO II は、Bluesky のリアルタイムストリームを 128 次元特
 詳細なシステム構成、数式、共有メモリ領域マップについては [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) を参照してください。
 </file>
 
+<<<<<<< HEAD
 <file path=".gitignore">
 # OS & Editor
 .DS_Store
@@ -1852,4 +1871,6 @@ node_modules/
 *.so
 </file>
 
+=======
+>>>>>>> origin/master
 </files>
