@@ -48,29 +48,45 @@ compute_forman_ricci <- function(adj_matrix, active_nodes) {
 	}
 
 	sub_adj <- adj_matrix[1:active_nodes, 1:active_nodes]
-	g <- graph_from_adjacency_matrix(sub_adj, mode = "undirected", weighted = TRUE)
-	deg <- degree(g)
 
-	edges <- get.edgelist(g)
+	max_w <- max(sub_adj)
+	if (max_w <= 0) {
+		return (0.0)
+	}
+
+	norm_adj <- sub_adj / max_w
+	deg <- rowSums(norm_adj)
+
+	edges <- which(norm_adj > 0, arr.ind = TRUE)
+	edges <- edges[edges[, 1] < edges[, 2], , drop = FALSE]
+
 	if (nrow(edges) == 0) {
 		return (0.0)
 	}
 
+	tri_mat <- norm_adj %*% norm_adj
 	ricci_sum <- 0
+	valid_edges <- 0
+
 	for (e in 1:nrow(edges)) {
 		u <- edges[e, 1]
 		v <- edges[e, 2]
-		w_uv <- E(g)$weight[e]
-		if (is.null(w_uv) || w_uv == 0) {
-			w_uv <- 1.0
-		}
 
-		# Forman-Ricci Curvature Formula for Weighted Graphs
-		r_e <- 4.0 - (deg[u] + deg[v])
-		ricci_sum <- ricci_sum + r_e
+		deg_u <- max(deg[u], 1e-5)
+		deg_v <- max(deg[v], 1e-5)
+		triangles_uv <- tri_mat[u, v]
+
+		raw_r <- 4.0 - deg_u - deg_v + 3.0 * triangles_uv
+		norm_r <- raw_r / sqrt(deg_u * deg_v)
+
+		ricci_sum <- ricci_sum + norm_r
+		valid_edges <- valid_edges + 1
 	}
 
-	mean_ricci <- ricci_sum / nrow(edges)
+	if (valid_edges == 0) {
+		return (0.0)
+	}
+	mean_ricci <- ricci_sum / valid_edges
 	return (mean_ricci)
 }
 
@@ -131,13 +147,13 @@ main_loop <- function() {
 		tda_res <- compute_tda_persistence(vec_data$matrix)
 
 		state_flags <- 0
-		if (mean_ricci < -1.5) {
+		if (mean_ricci < -1.2) {
 			state_flags <- bitwOr(state_flags, 2) # PERTURBED
 		}
-		if (mean_ricci < -3.0) {
+		if (mean_ricci < -2.0) {
 			state_flags <- bitwOr(state_flags, 4) # CRITICAL
 		}
-		if (tda_res$h1 > 0.8 || tda_res$h2 > 0.5) {
+		if (tda_res$h1 > 0.3 || tda_res$h2 > 0.2) {
 			state_flags <- bitwOr(state_flags, 8) # TDA_DISRUPTION
 		}
 
