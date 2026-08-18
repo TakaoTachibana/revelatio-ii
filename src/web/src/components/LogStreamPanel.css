@@ -1,0 +1,76 @@
+.log-panel {
+  flex: 1;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  backdrop-filter: blur(12px);
+  min-width: 0;
+}
+
+.log-container {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+}
+
+.post-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.post-card.trigger-card {
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.post-card.SINGULARITY_CATALYST { border-left-color: var(--color-critical); }
+.post-card.BOUNDARY_BREAKER { border-left-color: var(--color-perturbed); }
+.post-card.VORTICITY_CENTER { border-left-color: var(--color-accent); }
+
+.post-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.author-did {
+  color: var(--text-muted);
+}
+
+.role-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: bold;
+}
+
+.role-badge.SINGULARITY_CATALYST { background: rgba(239, 68, 68, 0.2); color: var(--color-critical); }
+.role-badge.BOUNDARY_BREAKER { background: rgba(245, 158, 11, 0.2); color: var(--color-perturbed); }
+.role-badge.VORTICITY_CENTER { background: rgba(56, 189, 248, 0.2); color: var(--color-accent); }
+
+.post-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-main);
+  word-break: break-word;
+}
+
+.post-footer-row {
+  display: flex;
+  gap: 16px;
+  font-size: 10px;
+  color: var(--text-muted);
+}

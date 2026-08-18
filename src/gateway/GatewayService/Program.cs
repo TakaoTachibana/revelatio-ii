@@ -76,6 +76,10 @@ app.MapPost("/api/v1/topology/event", async (TopologyEventRequest request, Cytop
 		}
 	}
 
+	var jsonOptions = new JsonSerializerOptions {
+		PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+	};
+
 	var payload = JsonSerializer.Serialize(new {
 		spectrumId,
 		metrics = request,
@@ -130,7 +134,8 @@ public record TopologyEventRequest (
 	double TdaH1Persistence,
 	double TdaH2Persistence,
 	double SindyResidual,
-	uint StateFlags
+	uint StateFlags,
+	string? Equation
 );
 
 
