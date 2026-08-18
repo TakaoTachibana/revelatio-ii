@@ -1,0 +1,43 @@
+:root {
+  --bg-color: #050811;
+  --panel-bg: rgba(10, 15, 28, 0.85);
+  --border-color: #1e293b;
+  --text-main: #f8fafc;
+  --text-muted: #64748b;
+  
+  /* State Colors */
+  --color-stable: #10b981;     /* Emerald Green */
+  --color-perturbed: #f59e0b;  /* Amber/Yellow */
+  --color-critical: #ef4444;   /* Crimson Red */
+  --color-accent: #38bdf8;     /* Cyber Cyan */
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  font-family: 'JetBrains Mono', 'Fira Code', 'Segoe UI', monospace;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  padding: 12px;
+  gap: 12px;
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  gap: 12px;
+  min-height: 0;
+}

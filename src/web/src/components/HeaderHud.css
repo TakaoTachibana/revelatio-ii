@@ -1,0 +1,52 @@
+.header-hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 20px;
+  backdrop-filter: blur(12px);
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.system-tag {
+  color: var(--color-accent);
+}
+
+.header-metrics {
+  display: flex;
+  gap: 24px;
+  font-size: 12px;
+}
+
+.metric-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.metric-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.status-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 11px;
+}
+
+.status-badge.stable { background: rgba(16, 185, 129, 0.2); color: var(--color-stable); border: 1px solid var(--color-stable); }
+.status-badge.perturbed { background: rgba(245, 158, 11, 0.2); color: var(--color-perturbed); border: 1px solid var(--color-perturbed); }
+.status-badge.critical { background: rgba(239, 68, 68, 0.2); color: var(--color-critical); border: 1px solid var(--color-critical); }

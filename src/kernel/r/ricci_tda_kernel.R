@@ -74,10 +74,11 @@ compute_forman_ricci <- function(adj_matrix, active_nodes) {
 
 		deg_u <- max(deg[u], 1e-5)
 		deg_v <- max(deg[v], 1e-5)
+		deg_sum <- deg_u + deg_v
 		triangles_uv <- tri_mat[u, v]
 
-		raw_r <- 4.0 - deg_u - deg_v + 3.0 * triangles_uv
-		norm_r <- raw_r / sqrt(deg_u * deg_v)
+		raw_r <- 4.0 - deg_sum + 3.0 * triangles_uv
+		norm_r <- (raw_r / deg_sum) - 0.111
 
 		ricci_sum <- ricci_sum + norm_r
 		valid_edges <- valid_edges + 1
@@ -170,5 +171,7 @@ main_loop <- function() {
 	}
 }
 
-main_loop()
+if (sys.nframe() == 0) {
+	main_loop()
+}
 

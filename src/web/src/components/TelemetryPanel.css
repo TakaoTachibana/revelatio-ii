@@ -1,0 +1,62 @@
+.telemetry-panel {
+  width: 32%;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  backdrop-filter: blur(12px);
+  overflow-y: auto;
+}
+
+.panel-section-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 6px;
+}
+
+.pde-box {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent);
+}
+
+.gauge-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gauge-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gauge-label-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.gauge-bar-bg {
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.gauge-bar-fill {
+  height: 100%;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
