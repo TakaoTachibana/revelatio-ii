@@ -26,15 +26,15 @@ function attach_shm()
 end
 
 function read_header(ctx::SHMContext)
-	raw_hdr = zeros(UInt8, 64)
+	raw_hdr = zeros(UInt8, 256)
 	ccall((:julia_shm_read_header_raw, LIB_SHM_BRIDGE), Cvoid, (Ptr{UInt8},), raw_hdr)
 
 	write_index = reinterpret(UInt64, raw_hdr[1:8])[1]
 	last_updated_epoch_ns = reinterpret(UInt64, raw_hdr[9:16])[1]
 	active_node_count = reinterpret(UInt32, raw_hdr[17:20])[1]
 	state_flags = reinterpret(UInt32, raw_hdr[21:24])[1]
-	mean_ricci = reinterpret(Float64, raw_hdr[25:32])[1]
-	re_lambda_max = reinterpret(Float64, raw_hdr[33:40])[1]
+	re_lambda_max = reinterpret(Float64, raw_hdr[25:32])[1]
+	mean_ricci = reinterpret(Float64, raw_hdr[33:40])[1]
 
 	return SHMHeader(write_index, last_updated_epoch_ns, active_node_count, state_flags, mean_ricci, re_lambda_max)
 end
@@ -46,10 +46,10 @@ function read_timeseries(ctx::SHMContext, time_steps::Int = 120)
 	if steps == 0
 		return Matrix{Float64}(undef, 0, 0)
 	end 
-	return out_matrix[:, 1:steps]
+	return copy(out_matrix[:, 1:steps])
 end
 
-function write_sindy_coefficients_and_reset(cts::SHMContext, coeffs::Vector{Float64})
+function write_sindy_coefficients_and_reset(ctx::SHMContext, coeffs::Vector{Float64})
 	D = length(coeffs) >= 1 ? coeffs[1] : 0.0
 	lambda = length(coeffs) >= 2 ? coeffs[2] : 0.0
 	ccall((:julia_shm_write_sindy_coefficients, LIB_SHM_BRIDGE), Cvoid,

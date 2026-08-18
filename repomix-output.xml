@@ -40,6 +40,33 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
+<<<<<<< HEAD
+docs/
+  ARCHITECTURE2.md
+include/
+  cytoplasm_v4.h
+src/
+  ingester/
+    main.go
+    shared_memory.c
+    shm_writer.go
+  kernel/
+    julia/
+      main.jl
+      Manifest.toml
+      Project.toml
+      shm_interface.jl
+      shm_julia_bridge.c
+      sindy_pde.jl
+    r/
+      ricci_tda_kernel.R
+      shm_r_bridge.c
+tests/
+  test_shm.c
+.gitignore
+ARCHITECUTURE.md
+go.mod
+=======
 src/
   kernel/
     julia/
@@ -49,12 +76,1532 @@ src/
 tests/
   test_shm
 ARCHITECUTURE.md
+>>>>>>> origin/master
 README.md
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
 
+<<<<<<< HEAD
+<file path="docs/ARCHITECTURE2.md">
+# REVELATIO II : System Engineering, Mathematical, & Phenomenological Specification
+### Dual-Layer Tensor-Field & Graph-PDE Autopoietic Sensing Engine
+#### Document Version: 2.1.0-APEP (Quantum-Riemannian Edition)
+
+---
+
+## 1. Theoretical & Phenomenological Foundations (思想・幾何学・量子情報的基礎)
+
+REVELATIO II は、単なるテキストストリーム解析ツールではなく、**「シュッツの社会現象学（相互主観的生活世界）」** と **「レヴィナスの他者論（全体性と無限）」** における言語・意識空間の動態を、**「アインシュタインの微分幾何学（リーマン多様体・リッチフロー）」** および **「量子力学的状態空間（128次元ヒルベルト空間）」** を媒介として数理的・物理的に解剖・定式化した動的位相社会計算エンジンである。
+
+### [1.1 思想的・物理的アナロジー（Phenomenological-Physical Coupling）]
+*   **シュッツ的「生活世界（Lebenswelt）」と「われわれ関係」**:  
+    他者との同調度・意識の共有度を 128 次元多様体の計量テンソル $g_{ij}$ および動的グラフトポロジーの隣接行列 $A(t)$ として表現。意味の共有空間は滑らかなリーマン幾何学として維持される。
+*   **レヴィナス的「全体性（Totalité）」の重力崩壊**:  
+    特定ドグマや感情による過分極（エコーチェンバー）を、128次元空間の局所負曲率（$R_{ij} < 0$）の急増による**「情報空間の重力崩壊（ブラックホール化）」**として定式化。他者の文脈を自己の論理に強制還元する倫理的暴力を示唆する。
+*   **レヴィナス的「顔（Visage）の侵入」と「限界界面の断絶」**:  
+    自己の全体性に回収不可能な絶対的他者（つぶやき）が突入した瞬間、トポロジー（持続ホモロジー $H_1, H_2$）が破綻（Rupture）する。この位相的破壊の触媒となる投稿を `BOUNDARY_BREAKER` / `SINGULARITY_CATALYST` として特定する。
+
+### [1.2 量子情報幾何学的表現（Quantum Information Analogies）]
+*   **意味論的状態ベクトル（Semantic State Vector）**:  
+    128次元の正規化特徴量ベクトル $\mathbf{v}(t)$ は、あらゆる潜在的文脈・意味が確率振幅として重なり合った 128 次元ヒルベルト空間内の状態ベクトル $|\psi\rangle$ である。
+*   **観測問題と状態の収縮（Wavefunction Collapse）**:  
+    多様体上に広がるテンソル場 $\mathbf{U}(t)$（潜在的言語波）に対し、界隈の限界界面を穿孔する特定の起爆粒子（投稿）が撃ち込まれた瞬間、重複状態が一気に単一の不可逆な相転移現象（炎上・対話断絶）へと**「状態収縮（Collapse）」**する。
+
+---
+
+## 2. System Architecture & Autopoietic Loop (システムアーキテクチャと自己組織化環)
+
+```
+[Bluesky Jetstream API] 
+       │
+       ▼
+[Phase 1: Go Ingester] ──(128D N-Gram & Graph Topology)──► [Shared Memory: Cytoplasm IV (512MB)]
+                                                                  │      ▲
+       ┌──────────────────────────────────────────────────────────┘      │ (New Interaction
+       │                                                                 │  & Diffusion Tensors)
+       ├──► [Phase 2A: R Analytics Kernel] ◄──(IPC Trigger)──────────────┤
+       │    (TDA H₁/H₂ Persistence, Graph Laplacian L(t), Ricci Flow)    │
+       │                                                                 │
+       ├──► [Phase 2B: Julia Compute Engine] ────────────────────────────┘
+       │    (Vector/Graph SINDy-PDE Sparse Regression)
+       │
+       ▼
+[Phase 3: .NET Gateway Service]
+       │
+       ├─► [MariaDB Event Archive] (Longitudinal Structural Memory)
+       │
+       ▼ (WebSocket Broadcast)
+[Phase 4: WebGL / React WebUI] (128D Manifold Deformable HUD)
+```
+
+### [2.1 高次元オートポイエーシス環（High-Dimensional Autopoietic Loop）]
+R エンジン（知覚・位相測定）と Julia エンジン（認知・方程式同定）が共有メモリを介して互いを駆動し合う自己参照的ルールの閉包（Autopoietic Closure）：
+1.  **知覚 (R Engine)**: 128D 多様体の局所リッチ曲率 $R_{ij}$ の歪み、および $H_1 / H_2$ 持続ホモロジーの破綻を検知。Julia へ IPC シグナル発火。
+2.  **物理法則の自律同定 (Julia Engine)**: 128D 状態行列 $\mathbf{U}(t)$ に対する **Vector / Graph SINDy-PDE** スパース回帰を実行し、システムの反応拡散テンソル方程式を動的に同定・更新。
+3.  **幾何学ルールの自己再定義 (R Engine)**: Julia が同定した拡散テンソル $\mathbf{D}$ を受け取り、リッチフロー方程式 $\frac{\partial g_{ij}}{\partial t} = -2 R_{ij}$ により、**自分自身が置かれている幾何学空間の計量テンソル $g_{ij}$ そのものを自律的に書き換えて順応**する。
+
+### [2.2 Macro-Tensor & Graph Equations]
+
+1.  **グラフ反応拡散系偏微分方程式 (Graph Reaction-Diffusion PDE - Julia Engine)**:
+    $$\frac{\partial \mathbf{U}}{\partial t} = \mathbf{F}(\mathbf{U}) - \mathbf{D} \cdot (L(t) \otimes I_{128}) \mathbf{U}$$
+    *   $\mathbf{F}(\mathbf{U}) = \mathbf{C}_1 \mathbf{U} + \mathbf{C}_2 (\mathbf{U} \circ \mathbf{U})$ : SINDy により同定される非線形自己増幅・相互作用項
+    *   $L(t) = D(t) - A(t)$ : ユーザ間相互作用（Reply/Quote/Mention）から生成される動的グラフ・ラプラシアン
+    *   $\mathbf{D} \in \mathbb{R}^{128 \times 128}$ : 特徴量次元間の異方性拡散テンソル
+
+2.  **リッチフロー方程式 (Ricci Flow Geometry - R Engine)**:
+    $$\frac{\partial g_{ij}}{\partial t} = -2 R_{ij}$$
+    *   局所曲率 $R_{ij} < 0$ の急増は、特定語彙への言語空間の重力崩壊（ブラックホール化）を示す。
+
+3.  **粒子寄与スコアおよび構造的役割（Micro-Particle Attribution Formula）**:
+    $$S_i = \left\| \mathbf{v}_{\max}(i) \right\|^2 \cdot \left\| \nabla_{\mathbf{U}_i} \mathcal{R}_{\text{SINDy}} \right\|_F \cdot (1 + |R_{i}|)$$
+    *   `SINGULARITY_CATALYST`: 空間の勾配・曲率を急激に歪ませた特異点起爆ポスト
+    *   `BOUNDARY_BREAKER`: 異種クラスタ間の限界界面を穿孔・破壊した触媒ポスト
+    *   `VORTICITY_CENTER`: 意味の渦（$\text{curl} \, \mathbf{U}$）の回転軸となっている空転ポスト
+
+---
+
+## 3. Shared Memory Specification (Cytoplasm IV : Key 0x41504550)
+
+*   **Total Footprint**: 512 MB (Linux System V Shared Memory)
+*   **IPC Key**: `0x41504550` ("APEP")
+
+### [Memory Layout Map]
+
+| Address Range | Section Name | Size | Structure & Content |
+| :--- | :--- | :--- | :--- |
+| `0x00000000 - 0x00000100` | Header Section | 256 B | アトミックインデックス, $\text{Re}(\lambda_{\max})$, 曲率指標 $\bar{R}$, ステートフラグ, タイムスタンプ |
+| `0x00000100 - 0x00000500` | Tensor Coefficients | 1,024 B | 128D SINDy 係数テンソル ($\mathbf{C}_1, \mathbf{C}_2$), 拡散テンソル $\mathbf{D}$, 残差 |
+| `0x00000500 - 0x00004000` | Particle Output Area | 15,104 B | 抽出トリガーポスト (最大 64 件) のスロット ID, 寄与スコア $S_i$, 局所曲率, 構造的役割フラグ |
+| `0x00004000 - 0x00044000` | Adjacency Matrix | 262,144 B | 近傍グラフの動的隣接行列 $A(t)$ (256×256 Float32 Dense Buffer) |
+| `0x00044000 - 0x0C044000` | Vector Ring Buffer | 192 MB | 128D 特徴量ベクトルリングバッファ (容量: 262,144 スロット, 各 768 B [ID, TS, Float32[128]]) |
+| `0x0C044000 - 0x20000000` | Text LRU Buffer | 320 MB | テキストメタデータ LRU スロット (容量: 16,384 スロット, 各 20.48 KB [URI, Author, Text, GraphMeta]) |
+
+---
+
+## 4. Database Schema (MariaDB - Longitudinal Structural Memory)
+
+```sql
+CREATE DATABASE IF NOT EXISTS revelatio_db
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_unicode_ci;
+
+USE revelatio_db;
+
+-- マクロ・システム状態、多様体曲率、および SINDy テンソル履歴
+CREATE TABLE IF NOT EXISTS spectrum_history_v2 (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    calculated_at_ns BIGINT NOT NULL,
+    re_lambda_max DOUBLE NOT NULL,
+    mean_ricci_curvature DOUBLE NOT NULL,
+    tda_h1_persistence DOUBLE NOT NULL,
+    tda_h2_persistence DOUBLE NOT NULL,
+    sindy_residual DOUBLE NOT NULL,
+    state_flags INT UNSIGNED NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_calculated_at (calculated_at_ns),
+    INDEX idx_re_lambda (re_lambda_max)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 微視的・構造的起爆粒子（つぶやき）ログ
+CREATE TABLE IF NOT EXISTS critical_trigger_posts_v2 (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    spectrum_id BIGINT NOT NULL,
+    slot_index INT UNSIGNED NOT NULL,
+    post_uri VARCHAR(256) NOT NULL,
+    author_did VARCHAR(128) NOT NULL,
+    post_text TEXT NOT NULL,
+    contribution_score DOUBLE NOT NULL,
+    local_ricci_curvature DOUBLE NOT NULL,
+    structural_role ENUM('SINGULARITY_CATALYST', 'BOUNDARY_BREAKER', 'VORTICITY_CENTER') NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (spectrum_id) REFERENCES spectrum_history_v2(id) ON DELETE CASCADE,
+    INDEX idx_uri (post_uri),
+    INDEX idx_author (author_did),
+    INDEX idx_role (structural_role)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+---
+
+## 5. Verification & Validation Protocol
+
+1.  **高次元アドバーサリアル・バーストテスト**:
+    *   Bluesky インジェスターに対し、異種対立的な意味論ベクトルを持つ 1,000 件の疑似ポスト群（限界界面穿孔データ）を 10ms 以内に人工注入する。
+2.  **多様体曲率・SINDy 応答検証**:
+    *   R エンジンが局所負曲率の不連続な増加（$R_{ij} < -2.0$）を検知し、Julia の Vector SINDy-PDE が非線形相互作用項 $\mathbf{C}_2$ の非ゼロ同定を 200ms 以内に達成することを確認。
+3.  **起爆粒子抽出精度テスト**:
+    *   注入された疑似ポスト群の中から、幾何学的歪みを引き起こした正確な触媒ポスト URI が `Particle Output Area` 経由で .NET Gateway にて抽出され、MariaDB に正確な `structural_role` 分類とともに 15ms 以内に保存されることを検証。
+4.  **WebGL レンダリング & アンカー追従検証**:
+    *   WebUI 上でメッシュが赤色スパイク形状に変形し、抽出された起爆ポストが 3D 空間上の特異点座標に正確にバインドされてホログラフィック表示されることを確認する。
+</file>
+
+<file path="include/cytoplasm_v4.h">
+/**
+ * @file cytoplasm_v4.h
+ * @brief REVELATIO II Cytoplasm IV Shared Memory Layout Specification
+ * @details System V Shared Memory (Key: 0x41504550 / "APEP", Size: 512 MB)
+ */
+
+#ifndef CYTOPLASM_V4_H
+#define CYTOPLASM_V4_H
+
+#include <stdint.h>
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/*=== Constant Definition === */
+
+#define CYTOPLASM_V4_IPC_KEY 0x41504550U /* "APEP" */
+#define CYTOPLASM_V4_SHM_SIZE (512U * 1024U * 1024) /* 512 MB */
+
+/* Feature Vector Configuration */
+#define VECTOR_DIM 128
+#define VECTOR_RING_CAPACITY 262144U /* ~192 MB Ring Buffer */
+
+/* Graph Topology Configuration */
+#define GRAPH_MAX_NODES 256U /* Max Active Graph Nodes */
+
+/* Text LRU Buffer Configuration */
+#define TEXT_LRU_CAPACITY 16384U /* ~320 MB LRU Buffer */
+#define TEXT_URI_MAX_LEN 256
+#define TEXT_AUTHOR_MAX_LEN 128
+#define TEXT_BODY_MAX_LEN 2048
+
+/* Particle Attribution Output Area */
+#define MAX_TOP_TRIGGER_POSTS 64U
+
+/* System State Flags */
+#define STATE_FLAG_STABLE 0x00
+#define STATE_FLAG_QUIET 0x01
+#define STATE_FLAG_PERTURBED 0x02
+#define STATE_FLAG_CRITICAL 0x04
+#define STATE_FLAG_TDA_DISRUPTION 0x08
+
+/* Structural Role Flags for Particles */
+#define ROLE_SINGULARITY_CATALYST 0x01
+#define ROLE_BOUNDARY_BREAKER 0x02
+#define ROLE_VORTICITY_CENTER 0x04
+
+#pragma pack(push, 1)
+
+/*=== 1. Header Section (256 Bytes) ===*/
+
+typedef struct {
+	uint64_t magic_number; /* 0x4150455052455634ULL ("APEPREV4") */
+	uint64_t write_index; /*Atomic global write counter */
+	uint64_t read_index; /*Global read pointer */
+	double re_lambda_max; /* Real part of max eigenvalue */
+	double mean_ricci_curvature; /* Average Ricci Curvature R_ver */
+	uint32_t state_flags; /* SYSTEM STATE FLAGS */
+	uint32_t active_node_count; /* Active nodes in graph topology */
+	uint64_t last_updated_epoch_ns; /* Timestamp (nanoseconds) */
+	uint8_t reserved[200];
+} HeaderSection;
+
+/*=== 2. Tensor Coefficient Section (1,024 Bytes) ===*/
+
+typedef struct {
+	/* Vector SINDy PDE Non-linear Coefficients (C1, C2 matrices in flattened/diagonol form) */
+	double c1_diag[VECTOR_DIM];
+	double c2_diag[VECTOR_DIM];
+	/* Anisotropic Diffusion Tensor D (Diagonal representation) */
+	double diffusion_tensor[VECTOR_DIM];
+	double residual_error;
+	double tda_h1_persistence;
+	double tda_h2_persistence;
+	uint64_t fit_timestamp_ns;
+	uint8_t reserved[160];
+} TensorCoefficientSection;
+
+/*=== 3. Particle Attribution Output Area (15,104 Bytes) ===*/
+
+typedef struct {
+	uint32_t slot_id;
+	uint32_t structural_role; /* Role flags (CATALYST / BREAKER / VORTICITY) */
+	double attribution_score; /* S_i Score */
+	double local_ricci_curvature; /* R_i Curvature */
+} TriggerParticle;
+
+typedef struct {
+	uint32_t trigger_count;
+	TriggerParticle particle[MAX_TOP_TRIGGER_POSTS];
+	uint64_t calculated_at_ns;
+	uint8_t reserved[128];
+} ParticleOutputArea;
+
+/*=== 4. Adjacency Matrix Section (262,144 Bytes) ===*/
+
+typedef struct {
+	/* 256 x 256 Dense Weight Matrix for Interaction Topology (Replay/Quote/Mention) */
+	float weights[GRAPH_MAX_NODES][GRAPH_MAX_NODES];
+} AdjacencyMatrixSection;
+
+/*=== 5. Feature Vector Slot Struct (768 Bytes per Slot) ===*/
+
+typedef struct {
+	uint64_t slot_id;
+	uint64_t timestamp_ns;
+	float values[VECTOR_DIM]; /* 128-dimentional projected feature vector */
+	uint8_t reserved[240];
+} VectorSlot;
+
+/*=== 6. Text Metadata LRU Slot Struct (20,480 Bytes per Slot) ===*/
+
+typedef struct {
+	uint64_t slot_id;
+	uint64_t timestamp_ns;
+	char uri[TEXT_URI_MAX_LEN];
+	char author_did[TEXT_AUTHOR_MAX_LEN];
+	char text[TEXT_BODY_MAX_LEN];
+	double spectral_score;
+	double local_ricci_curvature;
+	uint32_t structural_role;
+	uint8_t reserved[18012];
+} TextSlot;
+
+/*=== 7. Cytoplasm IV Full Shared Memory Structure (512 MB) ===*/
+
+typedef struct {
+	HeaderSection header; /* 0x00000000 - 256 B */
+	TensorCoefficientSection coefficients; /* 0x00000100 - 3,264 B */
+	ParticleOutputArea particles_output; /* 0x00000DC0 - 1,676 B */
+	uint8_t reserved_meta[11188]; /* 0x0000144C -> to padding 0x00004000 */
+	
+	AdjacencyMatrixSection adjacency_matrix; /* 0x00004000 - 262,144 B */
+
+	VectorSlot vectors[VECTOR_RING_CAPACITY]; /* 192 MB */
+	TextSlot text_lru[TEXT_LRU_CAPACITY]; /* 320 MB */
+} CytoplasmV4;
+
+#pragma pack(pop)
+
+/*=== Memory Layout Alignment Assertions (Compile-time Verification) ===*/
+
+#ifdef __cplusplus
+	#ifndef _Static_assert
+		#define _Static_assert static_assert
+	#endif
+#endif
+
+_Static_assert(sizeof(HeaderSection) == 256, "HeaderSection must be exactly 256 bytes");
+_Static_assert(sizeof(TensorCoefficientSection) == 3256 || sizeof(TensorCoefficientSection) == 3264, "TensorCoefficientSection layout check");
+_Static_assert(offsetof(CytoplasmV4, adjacency_matrix) == 0x4000, "Adjacency matrix offset must be exactly 0x4000 (16KB)");
+_Static_assert(sizeof(VectorSlot) == 768, "VectorSlot size must be exactly 768 bytes");
+_Static_assert(sizeof(TextSlot) == 20480, "TextSlot size must be exactly 20,480 bytes");
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* CYTOPLASM_V4_H */
+</file>
+
+<file path="src/ingester/main.go">
+package main
+
+import (
+	"crypto/md5"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"log"
+	"math"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+	"unicode/utf8"
+
+	"github.com/gorilla/websocket"
+)
+
+const JetstreamEndpoint = "wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post"
+
+type JetstreamEvent struct {
+	Did string `json:"did"`
+	Kind string `json:"kind"`
+	Commit *struct {
+		Action string `json:"action"`
+		Collection string `json:"collection"`
+		RKey string `json:"rkey"`
+		Record struct {
+			Type string `json:"$type"`
+			Text string `json:"text"`
+			CreatedAt string `json:"createdAt"`
+			Reply *struct {
+				Parent struct {
+					Uri string `json:"uri"`
+				} `json:"parent"`
+				Root struct {
+					Uri string `json:"uri"`
+				} `json:"root"`
+			} `json:"reply"`
+		} `json:"record"`
+	} `json:"commit"`
+}
+
+func ExtractFeatureVector128(text string) [128]float32 {
+	var vec [128]float32
+	if len(text) == 0 {
+		return vec
+	}
+
+	runes := []rune(strings.ToLower(text))
+	n := len(runes)
+
+	for i := 0; i < n; i++ {
+		var ngram string
+		if i + 3 <= n {
+			ngram = string(runes[i : i + 3])
+		} else {
+			ngram = string(runes[i:])
+		}
+
+		hash := md5.Sum([]byte(ngram))
+		idx1 := binary.BigEndian.Uint32(hash[0:4]) % 128
+		idx2 := binary.BigEndian.Uint32(hash[4:8]) % 128
+		val := float32((int(hash[8]) % 2) + 2 - 1)
+
+		vec[idx1] += val
+		vec[idx2] += val * 0.5
+	}
+
+	var normSq float32
+	for i := 0; i < 128; i++ {
+		normSq += vec[i] * vec[i]
+	}
+	if normSq > 0 {
+		norm := float32(math.Sqrt(float64(normSq)))
+		for i := 0; i < 128; i++ {
+			vec[i] /= norm
+		}
+	}
+
+	return vec
+}
+
+func ExtractDIDFromURI(uri string) string {
+	if strings.HasPrefix(uri, "at://") {
+		parts := strings.Split(uri[5:], "/")
+		if len(parts) > 0 {
+			return parts[0]
+		}
+	}
+	return ""
+}
+
+func safeTruncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	for maxBytes > 0 && !utf8.RuneStart(s[maxBytes]) {
+		maxBytes--
+	}
+	return s[:maxBytes]
+}
+
+func main() {
+	log.Println("[REVELATIO II Ingester] Initializing Cytoplasm IV (512MB) Shared Memory Writer...")
+
+	shmWriter, err := NewSharedMemoryWriter()
+	if err != nil {
+		log.Fatalf("[FATAL] Shared memory attach error: %v", err)
+	}
+	defer shmWriter.Close()
+
+	log.Printf("[REVELATIO II Ingester] Dialing Bluesky Jetstream API: %s", JetstreamEndpoint)
+	
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+
+	conn, _, err := websocket.DefaultDialer.Dial(JetstreamEndpoint, nil)
+	if err != nil {
+		log.Fatalf("[FATAL] WebSoket connection error: %v", err)
+	}
+	defer conn.Close()
+
+	log.Println("[REVELATIO II Ingester] Stream Connected! Ingestint 128D Vector & Topology into Cytoplasm IV...")
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		var processedCount uint64
+
+		for {
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				log.Printf("[ERROR] WebSocket read error: %v", err)
+				return
+			}
+
+			var event JetstreamEvent
+			if err := json.Unmarshal(message, &event); err != nil || event.Kind != "commit" || event.Commit == nil {
+				continue
+			}
+
+			if event.Commit.Collection == "app.bsky.feed.post" && (event.Commit.Action == "create" || event.Commit.Action == "") {
+				text := event.Commit.Record.Text
+				if len(text) == 0 {
+					continue
+				}
+
+				safeText := safeTruncateUTF8(text, 2048)
+				uri := fmt.Sprintf("at://%s/%s/%s", event.Did, event.Commit.Collection, event.Commit.RKey)
+				authorDID := event.Did
+				vector128 := ExtractFeatureVector128(safeText)
+
+				var targetDID string
+				if event.Commit.Record.Reply != nil {
+					targetDID = ExtractDIDFromURI(event.Commit.Record.Reply.Parent.Uri)
+				}
+
+				slotIdx := shmWriter.WritePost(uri, authorDID, safeText, vector128, targetDID)
+				processedCount++
+
+				if processedCount == 1 || processedCount % 500 == 0 {
+					log.Printf("[REVELATIO II Ingester] Streamed %d posts | Latest Slot: %d | Author: %s",
+					processedCount, slotIdx, authorDID[:18]+"...")
+				}
+			}
+		}
+	}()
+
+	select {
+	case <-interrupt:
+		log.Println("[REVELATIO II Ingester] Shutting down stream consumer...")
+		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+		}
+	case <-done:
+	}
+
+	log.Println("[REVELATIO II Ingester] Shutdonw complete.")
+}
+</file>
+
+<file path="src/ingester/shared_memory.c">
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include "../../include/cytoplasm_v4.h"
+
+CytoplasmV4* cytoplasm_v4_attach(int *shmid_out) {
+	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY, sizeof(CytoplasmV4), IPC_CREAT | 0666);
+	if (shmid < 0) {
+		perror("[Cytoplasm IV C-Error] shmget failed");
+		return NULL;
+	}
+
+	void *shm_ptr = shmat(shmid, NULL, 0);
+	if (shm_ptr == (void *)-1) {
+		perror("[Cytoplasm IV C-Error] shmat failed");
+		return NULL;
+	}
+
+	if (shmid_out != NULL) {
+		*shmid_out = shmid;
+	}
+
+	CytoplasmV4 *cytoplasm = (CytoplasmV4 *)shm_ptr;
+
+	if (cytoplasm->header.magic_number != 0x4150455052455634ULL) {
+		cytoplasm->header.magic_number = 0x4150455052455634ULL; /* "APERREV4" */
+		cytoplasm->header.re_lambda_max = -0.45;
+		cytoplasm->header.mean_ricci_curvature = 0.0;
+		cytoplasm->header.state_flags = STATE_FLAG_STABLE;
+		cytoplasm->header.write_index = 0;
+		cytoplasm->header.read_index = 0;
+		cytoplasm->header.active_node_count = 0;
+	}
+
+	return cytoplasm;
+}
+
+int cytoplasm_v4_detach(CytoplasmV4 *cytoplasm) {
+	if (cytoplasm == NULL) {
+		return -1;
+	}
+
+	return shmdt((void *)cytoplasm);
+}
+</file>
+
+<file path="src/ingester/shm_writer.go">
+package main
+
+/*
+#cgo CFLAGS: -I../../include
+#include "../../include/cytoplasm_v4.h"
+
+CytoplasmV4* cytoplasm_v4_attach(int *shmid_out);
+int cytoplasm_v4_detach(CytoplasmV4 *cytoplasm);
+*/
+import "C"
+
+import (
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
+	"unsafe"
+)
+
+type SharedMemoryWriter struct {
+	shmPtr *C.CytoplasmV4
+	shmID C.int
+	nodeMap map[string]int
+	nodeCount int
+	mu sync.Mutex
+}
+
+func NewSharedMemoryWriter() (*SharedMemoryWriter, error) {
+	var shmID C.int
+	ptr := C.cytoplasm_v4_attach(&shmID)
+	if ptr == nil {
+		return nil, fmt.Errorf("failed to attach to Cytoplasm IV 512MB shared memory")
+	}
+
+	return &SharedMemoryWriter {
+		shmPtr: ptr,
+		shmID: shmID,
+		nodeMap: make(map[string]int),
+	}, nil
+}
+
+func (w *SharedMemoryWriter) getOrAssignNodeIndex(did string) int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if idx, exists := w.nodeMap[did]; exists {
+		return idx
+	}
+
+	if w.nodeCount < C.GRAPH_MAX_NODES {
+		idx := w.nodeCount
+		w.nodeMap[did] = idx
+		w.nodeCount++
+		atomic.StoreUint32((*uint32)(unsafe.Pointer(&w.shmPtr.header.active_node_count)), uint32(w.nodeCount))
+		return idx
+	}
+
+	hash := 0
+	for _, ch := range did {
+		hash = (hash * 31 + int(ch)) % C.GRAPH_MAX_NODES
+	}
+	return hash
+}
+
+func (w *SharedMemoryWriter) WritePost(uri, authorDID, text string, vector [128]float32, targetDID string) uint64 {
+	nowNs := uint64(time.Now().UnixNano())
+
+	// 1. Atomic Index Increment
+	writeIdx := atomic.AddUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.write_index)), 1) - 1
+
+	// 2. Vector Ring Buffer Write (~192MB Zone)
+	vSlotIdx := writeIdx % C.VECTOR_RING_CAPACITY
+	vSlot := &w.shmPtr.vectors[vSlotIdx]
+	vSlot.slot_id = C.uint64_t(writeIdx)
+	vSlot.timestamp_ns = C.uint64_t(nowNs)
+
+	for i := 0; i < C.VECTOR_DIM; i++ {
+		vSlot.values[i] = C.float(vector[i])
+	}
+
+	// 3. Text LRU Buffer Write (~320MB Zone)
+	tSlotIdx := writeIdx % C.TEXT_LRU_CAPACITY
+	tSlot := &w.shmPtr.text_lru[tSlotIdx]
+	tSlot.slot_id = C.uint64_t(writeIdx)
+	tSlot.timestamp_ns = C.uint64_t(nowNs)
+
+	copyCString(unsafe.Pointer(&tSlot.uri[0]), uri, C.TEXT_URI_MAX_LEN)
+	copyCString(unsafe.Pointer(&tSlot.author_did[0]), authorDID, C.TEXT_AUTHOR_MAX_LEN)
+	copyCString(unsafe.Pointer(&tSlot.text[0]), text, C.TEXT_BODY_MAX_LEN)
+
+	// 4. Graph Adjacency Matrix Update (Replay/Quote/Mention Interfaction Topology)
+	if targetDID != "" {
+		srcIdx := w.getOrAssignNodeIndex(authorDID)
+		dstIdx := w.getOrAssignNodeIndex(targetDID)
+
+		weightPtr := &w.shmPtr.adjacency_matrix.weights[srcIdx][dstIdx]
+		currentWeight := float32(*weightPtr)
+		newWeight := currentWeight * 0.95 + 1.0
+		if newWeight > 10.0 {
+			newWeight = 10.0
+		}
+		*weightPtr = C.float(newWeight)
+	}
+
+	atomic.StoreUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.last_updated_epoch_ns)), nowNs)
+
+	return writeIdx
+}
+
+func copyCString(dst unsafe.Pointer, src string, maxLen int) {
+	bytes := []byte(src)
+	if len(bytes) >= maxLen {
+		bytes = bytes[:maxLen - 1]
+	}
+	dstBuf := (*[1 << 30]byte)(dst)[:maxLen:maxLen]
+	copy(dstBuf, bytes)
+	dstBuf[len(bytes)] = 0
+}
+
+func (w *SharedMemoryWriter) Close() {
+	if w.shmPtr != nil {
+		C.cytoplasm_v4_detach(w.shmPtr)
+	}
+}
+</file>
+
+<file path="src/kernel/julia/main.jl">
+using Pkg
+
+Pkg.activate(@__DIR__)
+
+required_pkgs = ["LinearAlgebra", "Statistics", "Printf", "HTTP", "JSON3"]
+
+for pkg in required_pkgs
+	if !haskey(Pkg.project().dependencies, pkg)
+		println("[Julia Setup] Installing missing package: $pkg...")
+		Pkg.add(pkg)
+	end
+end
+
+using Printf, HTTP, JSON3
+
+include("shm_interface.jl")
+include("sindy_pde.jl")
+
+using .SHMInterface
+using .SINDyPDE
+
+const GATEWAY_URL = "http://localhost:5000/api/v1/topology/event"
+
+function main()
+	println("=== REVALATIO II Compute Engine (Julia) ===")
+	ctx = SHMInterface.attach_shm()
+	println("[Julia Compute] Connected to Cytoplasm IV Shared Memory (512MB).")
+
+	print("[Julia Warmup] Compiling SINDy-PDE pipeline...")
+	try
+		dummy_ts = SHMInterface.read_timeseries(ctx, 10)
+		if !isempty(dummy_ts)
+			_ = SINDyPDE.fit_sindy_pde(dummy_ts)
+		end
+		println(" Done.")
+	catch err
+		println(" Skipped (waiting for live stream).")
+	end
+
+	last_run_time = 0.0
+	while true
+		hdr = SHMInterface.read_header(ctx)
+		current_time = time()
+
+		is_tda_triggered = (hdr.state_flags & UInt32(0x08)) != 0
+		is_critical = (hdr.state_flags & UInt32(0x04)) != 0
+		is_timeout = (current_time - last_run_time) > 10.0
+
+		if is_tda_triggered || is_critical || is_timeout
+			println("\n[TDA / Critical Disruption Triggered!] Re-identifying SINDy-PDE Governing Equations...")
+
+			ts = SHMInterface.read_timeseries(ctx, 120)
+			if !isempty(ts)
+				sindy_res = SINDyPDE.fit_sindy_pde(ts)
+
+				SHMInterface.write_sindy_coefficients_and_reset(ctx, sindy_res.coefficients)
+				println("[Autopoietic Loop] PDE coefficients dispatched back to SHM for R engine")
+
+				@printf("  Identified PDE : %s\n", sindy_res.equation_str)
+				@printf("  Residual Error : %.6f\n", sindy_res.residual)
+				@printf("  Re(lambda_max) : %.4f\n", hdr.re_lambda_max)
+
+				payload = (
+					timestamp = round(Int64, time()),
+					writeIndex = round(Int64, hdr.write_index),
+					reLambdaMax = Float64(hdr.re_lambda_max),
+					equation = sindy_res.equation_str,
+					coefficients = sindy_res.coefficients,
+					residual = Float64(sindy_res.residual)
+				)
+
+				@async begin
+					try
+						HTTP.post(GATEWAY_URL, ["Content-Type" => "application/json"], JSON3.write(payload); connect_timeout = 1, request_timeout = 1)
+						println("  [Gateway Sync] Disruption event dispatched to Gateway.")
+					catch err
+						println("  [Gateway Sync Warning] Gateway offline. Stored locally.")
+					end
+				end
+
+				SHMInterface.reset_tda_flag_and_mark_sindy(ctx)
+				last_run_time = current_time
+			end
+		end
+		sleep(0.1)
+	end
+end
+
+main()
+</file>
+
+<file path="src/kernel/julia/Manifest.toml">
+# This file is machine-generated - editing it directly is not advised
+
+julia_version = "1.12.6"
+manifest_format = "2.0"
+project_hash = "5de53b4e6860caf39f846bebd57682dbe9340e61"
+
+[[deps.Artifacts]]
+uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
+version = "1.11.0"
+
+[[deps.Base64]]
+uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
+version = "1.11.0"
+
+[[deps.CodecZlib]]
+deps = ["TranscodingStreams", "Zlib_jll"]
+git-tree-sha1 = "970758a3d591a2a5c2a907c53f2e2f8c1b1d3537"
+uuid = "944b1d66-785c-5afd-91f1-9de20f533193"
+version = "0.7.9"
+
+[[deps.CompilerSupportLibraries_jll]]
+deps = ["Artifacts", "Libdl"]
+uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
+version = "1.3.0+1"
+
+[[deps.Dates]]
+deps = ["Printf"]
+uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
+version = "1.11.0"
+
+[[deps.EnumX]]
+git-tree-sha1 = "c49898e8438c828577f04b92fc9368c388ac783c"
+uuid = "4e289a0a-7415-4d19-859d-a7e5c4648b56"
+version = "1.0.7"
+
+[[deps.HTTP]]
+deps = ["Base64", "CodecZlib", "Dates", "EnumX", "PrecompileTools", "Random", "Reseau", "SHA", "URIs", "UUIDs", "Zlib_jll"]
+git-tree-sha1 = "d6e390d1515836237b837fb7b6fca7ba1d752db6"
+uuid = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+version = "2.6.5"
+
+[[deps.JSON3]]
+deps = ["Dates", "Mmap", "Parsers", "PrecompileTools", "StructTypes", "UUIDs"]
+git-tree-sha1 = "411eccfe8aba0814ffa0fdf4860913ed09c34975"
+uuid = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+version = "1.14.3"
+
+    [deps.JSON3.extensions]
+    JSON3ArrowExt = ["ArrowTypes"]
+
+    [deps.JSON3.weakdeps]
+    ArrowTypes = "31f734f8-188a-4ce0-8406-c8a06bd891cd"
+
+[[deps.Libdl]]
+uuid = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+version = "1.11.0"
+
+[[deps.LinearAlgebra]]
+deps = ["Libdl", "OpenBLAS_jll", "libblastrampoline_jll"]
+uuid = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+version = "1.12.0"
+
+[[deps.Mmap]]
+uuid = "a63ad114-7e13-5084-954f-fe012c677804"
+version = "1.11.0"
+
+[[deps.NetworkOptions]]
+uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
+version = "1.3.0"
+
+[[deps.OpenBLAS_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
+uuid = "4536629a-c528-5b80-bd46-f80d51c5b363"
+version = "0.3.29+0"
+
+[[deps.OpenSSL_jll]]
+deps = ["Artifacts", "Libdl"]
+uuid = "458c3c95-2e84-50aa-8efc-19380b2a3a95"
+version = "3.5.4+0"
+
+[[deps.Parsers]]
+deps = ["Dates", "PrecompileTools", "UUIDs"]
+git-tree-sha1 = "3de8f5e6e90ebfa8d6d1f86997d6cdcd6a912ff3"
+uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
+version = "2.8.7"
+
+[[deps.PrecompileTools]]
+deps = ["Preferences"]
+git-tree-sha1 = "edbeefc7a4889f528644251bdb5fc9ab5348bc2c"
+uuid = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
+version = "1.3.4"
+
+[[deps.Preferences]]
+deps = ["TOML"]
+git-tree-sha1 = "8b770b60760d4451834fe79dd483e318eee709c4"
+uuid = "21216c6a-2e73-6563-6e65-726566657250"
+version = "1.5.2"
+
+[[deps.Printf]]
+deps = ["Unicode"]
+uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+version = "1.11.0"
+
+[[deps.Random]]
+deps = ["SHA"]
+uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+version = "1.11.0"
+
+[[deps.Reseau]]
+deps = ["NetworkOptions", "OpenSSL_jll", "PrecompileTools", "Random", "SHA"]
+git-tree-sha1 = "ca7b7e19c33dd5dfae91369724d7edc198da29f5"
+uuid = "802f3686-a58f-41ce-bb0c-3c43c75bba36"
+version = "1.4.0"
+
+[[deps.SHA]]
+uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+version = "0.7.0"
+
+[[deps.Statistics]]
+deps = ["LinearAlgebra"]
+git-tree-sha1 = "ae3bb1eb3bba077cd276bc5cfc337cc65c3075c0"
+uuid = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+version = "1.11.1"
+
+    [deps.Statistics.extensions]
+    SparseArraysExt = ["SparseArrays"]
+
+    [deps.Statistics.weakdeps]
+    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+
+[[deps.StructTypes]]
+deps = ["Dates", "UUIDs"]
+git-tree-sha1 = "159331b30e94d7b11379037feeb9b690950cace8"
+uuid = "856f2bd8-1eba-4b0a-8007-ebc267875bd4"
+version = "1.11.0"
+
+[[deps.TOML]]
+deps = ["Dates"]
+uuid = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+version = "1.0.3"
+
+[[deps.TranscodingStreams]]
+git-tree-sha1 = "0c45878dcfdcfa8480052b6ab162cdd138781742"
+uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
+version = "0.11.3"
+
+[[deps.URIs]]
+git-tree-sha1 = "908fec9df6c5de98548ead82a468c95ccf6cd263"
+uuid = "5c2747f8-b7ea-4ff2-ba2e-563bfd36b1d4"
+version = "1.7.0"
+
+[[deps.UUIDs]]
+deps = ["Random", "SHA"]
+uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
+version = "1.11.0"
+
+[[deps.Unicode]]
+uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
+version = "1.11.0"
+
+[[deps.Zlib_jll]]
+deps = ["Libdl"]
+uuid = "83775a58-1f1d-513f-b197-d71354ab007a"
+version = "1.3.1+2"
+
+[[deps.libblastrampoline_jll]]
+deps = ["Artifacts", "Libdl"]
+uuid = "8e850b90-86db-534c-a0d3-1478176c7d93"
+version = "5.15.0+0"
+</file>
+
+<file path="src/kernel/julia/Project.toml">
+[deps]
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+</file>
+
+<file path="src/kernel/julia/shm_interface.jl">
+module SHMInterface
+
+using Printf
+
+const LIB_SHM_BRIDGE = "./shm_julia_bridge.so"
+
+struct SHMHeader
+	write_index::UInt64
+	last_updated_epoch_ns::UInt64
+	active_node_count::UInt32
+	state_flags::UInt32
+	mean_ricci_curvature::Float64
+	re_lambda_max::Float64
+end
+
+struct SHMContext
+	attached::Bool
+end
+
+function attach_shm()
+	status = ccall((:julia_shm_attach, LIB_SHM_BRIDGE), Int32, ())
+	if status != 0
+		error("[SHMInterface FATAL] Cannot attach to Cytoplasm IV. Code: $status")
+	end
+	return SHMContext(true)
+end
+
+function read_header(ctx::SHMContext)
+	raw_hdr = zeros(UInt8, 256)
+	ccall((:julia_shm_read_header_raw, LIB_SHM_BRIDGE), Cvoid, (Ptr{UInt8},), raw_hdr)
+
+	write_index = reinterpret(UInt64, raw_hdr[1:8])[1]
+	last_updated_epoch_ns = reinterpret(UInt64, raw_hdr[9:16])[1]
+	active_node_count = reinterpret(UInt32, raw_hdr[17:20])[1]
+	state_flags = reinterpret(UInt32, raw_hdr[21:24])[1]
+	mean_ricci = reinterpret(Float64, raw_hdr[25:32])[1]
+	re_lambda_max = reinterpret(Float64, raw_hdr[33:40])[1]
+
+	return SHMHeader(write_index, last_updated_epoch_ns, active_node_count, state_flags, mean_ricci, re_lambda_max)
+end
+
+function read_timeseries(ctx::SHMContext, time_steps::Int = 120)
+	out_matrix = zeros(Float64, 128, time_steps)
+	steps = ccall((:julia_shm_read_timeseries, LIB_SHM_BRIDGE), Int32,
+								(Cint, Ptr{Cdouble}) , time_steps, out_matrix)
+	if steps == 0
+		return Matrix{Float64}(undef, 0, 0)
+	end 
+	return copy(out_matrix[:, 1:steps])
+end
+
+function write_sindy_coefficients_and_reset(cts::SHMContext, coeffs::Vector{Float64})
+	D = length(coeffs) >= 1 ? coeffs[1] : 0.0
+	lambda = length(coeffs) >= 2 ? coeffs[2] : 0.0
+	ccall((:julia_shm_write_sindy_coefficients, LIB_SHM_BRIDGE), Cvoid,
+				(Cdouble, Cdouble), D, lambda)
+end
+
+function reset_tda_flag_and_mark_sindy(ctx::SHMContext)
+	ccall((:julia_shm_reset_tda_flag_and_mark_sindy, LIB_SHM_BRIDGE), Cvoid, ())
+end
+
+end # module
+</file>
+
+<file path="src/kernel/julia/shm_julia_bridge.c">
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include "cytoplasm_v4.h"
+
+static CytoplasmV4 *g_cytoplasm = NULL;
+
+int julia_shm_attach(void) {
+	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY,sizeof(CytoplasmV4), 0666);
+	if (shmid < 0) {
+		return -1;
+	}
+
+	void *shm_ptr = shmat(shmid, NULL, 0);
+	if (shm_ptr == (void *)-1) {
+		return -2;
+	}
+
+	g_cytoplasm = (CytoplasmV4 *)shm_ptr;
+	return 0;
+}
+
+void julia_shm_read_header_raw(void *out_hdr) {
+	if (g_cytoplasm == NULL || out_hdr == NULL) {
+		return;
+	}
+	memcpy(out_hdr, &(g_cytoplasm->header), sizeof(HeaderSection));
+}
+
+int julia_shm_read_timeseries(int time_steps, double *out_matrix) {
+	if (g_cytoplasm == NULL) {
+		return 0;
+	}
+
+	uint64_t w_idx = g_cytoplasm->header.write_index;
+	int steps = (time_steps > (int)VECTOR_RING_CAPACITY) ? (int)VECTOR_RING_CAPACITY : time_steps;
+
+	for (int t = 0; t < steps; t++) {
+		uint64_t target_idx = (w_idx > (uint64_t)t) ? (w_idx - 1 - t) : 0;
+		uint32_t slot = (uint32_t)(target_idx % VECTOR_RING_CAPACITY);
+
+		for (int d = 0; d < VECTOR_DIM; d++) {
+			out_matrix[d + t * VECTOR_DIM] = (double)g_cytoplasm->vectors[slot].values[d];
+		}
+	}
+	return steps;
+}
+
+void julia_shm_write_sindy_coefficients(double diffusion_D, double reaction_lambda) {
+	if (g_cytoplasm == NULL) {
+		return;
+	}
+	for (int d = 0; d < VECTOR_DIM; d++) {
+		g_cytoplasm->coefficients.diffusion_tensor[d] = diffusion_D;
+		g_cytoplasm->coefficients.c1_diag[d] = reaction_lambda;
+	}
+}
+
+void julia_shm_reset_tda_flag_and_mark_sindy(void) {
+	if (g_cytoplasm == NULL) {
+		return;
+	}
+	g_cytoplasm->header.state_flags &= ~((uint32_t)STATE_FLAG_TDA_DISRUPTION);
+}
+
+void julia_shm_detach(void) {
+	if (g_cytoplasm != NULL) {
+		shmdt((void *)g_cytoplasm);
+		g_cytoplasm = NULL;
+	}
+}
+</file>
+
+<file path="src/kernel/julia/sindy_pde.jl">
+module SINDyPDE
+
+using LinearAlgebra
+using Statistics
+using Printf
+
+struct SINDyResult
+	equation_str::String
+	coefficients::Vector{Float64}
+	residual::Float64
+end
+
+function fit_sindy_pde(U::Matrix{Float64})
+	dim, T = size(U)
+	if T < 10
+		return SINDyResult("delu/delt = 0", [0.0, 0.0, 0.0], 0.0)
+	end
+	dt = 0.1
+	dU_dt = (U[:, 2:end] .- U[:, 1:end - 1]) ./ dt
+	
+	Laplacian_U = zeros(Float64, dim, T - 1)
+	for t in 1:T - 1
+		u_t = U[:, t]
+		lap = circshift(u_t, 1) .+ circshift(u_t, -1) .- 2.0 .* u_t
+		Laplacian_U[:, t] = lap
+	end
+
+	u_vec = vec(U[:, 1:end - 1])
+	lap_vec = vec(Laplacian_U)
+	u_cubic_vec = u_vec .^ 3
+	du_vec = vec(dU_dt)
+
+	Theta = [lap_vec u_vec u_cubic_vec]
+	Xi = Theta \ du_vec
+
+	for iter in 1:3
+		small_inds = abs.(Xi) .< 0.01
+		Xi[small_inds] .= 0.0
+		for i in 1:size(Theta, 2)
+			if !small_inds[i]
+				Xi[i] = Theta[:, i] \ du_vec
+			end
+		end
+	end
+
+	D_coeff = Xi[1]
+	lambda_coeff = Xi[2]
+	cubic_coeff = Xi[3]
+
+	res_val = norm(Theta * Xi .- du_vec) / sqrt(length(du_vec))
+	eq_str = @sprintf("delu/delt = %.4fdel^2u + %.4fu %+.4fu^3", D_coeff, lambda_coeff, cubic_coeff)
+
+	return SINDyResult(eq_str, [D_coeff, lambda_coeff, cubic_coeff], res_val)
+end
+
+end # module
+</file>
+
+<file path="src/kernel/r/ricci_tda_kernel.R">
+# REVELATIO II Phase 2-A: R Analaytics Kernel
+# 128D Manifold Ricci Curvature & TDA Persistence Disruption Engine
+
+suppressPackageStartupMessages({
+	library(TDA)
+	library(igraph)
+	library(matrixStats)
+})
+
+# Load C Bridge
+dyn.load("shm_r_bridge.so")
+
+attach_shm <- function() {
+	res <- .C("r_shm_attach", status = integer(1))
+	if (res$status != 0) {
+		stop(paste("[R-Kernel FATAL] Cannot attach to Cytoplasm IV. Code:", res$status))
+	}
+	cat("[R-Kernel] Attached to Cytoplasm IV Shared Memory (512MB)\n")
+}
+
+read_vectors <- function(sample_count = 256) {
+	out_mat <- numeric(sample_count * 128)
+	out_ts <- numeric(sample_count)
+	res <- .C("r_shm_read_recent_vectors",
+						sample_count = as.integer(sample_count),
+						out_matrix = as.double(out_mat),
+						out_timestamps = as.double(out_ts))
+
+	mat <- matrix(res$out_matrix, nrow = sample_count, ncol = 128, byrow = TRUE)
+	return(list(matrix = mat, timestamps = res$out_timestamps))
+}
+
+read_adjacency <- function() {
+	out_adj <- numeric(256 * 256)
+	active_n <- integer(1)
+	res <- .C("r_shm_read_adjacency_matrix",
+						out_adj_256x256 = as.double(out_adj),
+						active_nodes = as.integer(active_n))
+
+	adj_mat <- matrix(res$out_adj_256x256, nrow = 256, ncol = 256, byrow = TRUE)
+	return(list(adj = adj_mat, active_nodes = res$active_nodes))
+
+}
+
+compute_forman_ricci <- function(adj_matrix, active_nodes) {
+	if (active_nodes < 3) {
+		return (0.0)
+	}
+
+	sub_adj <- adj_matrix[1:active_nodes, 1:active_nodes]
+	g <- graph_from_adjacency_matrix(sub_adj, mode = "undirected", weighted = TRUE)
+	deg <- degree(g)
+
+	edges <- get.edgelist(g)
+	if (nrow(edges) == 0) {
+		return (0.0)
+	}
+
+	ricci_sum <- 0
+	for (e in 1:nrow(edges)) {
+		u <- edges[e, 1]
+		v <- edges[e, 2]
+		w_uv <- E(g)$weight[e]
+		if (is.null(w_uv) || w_uv == 0) {
+			w_uv <- 1.0
+		}
+
+		# Forman-Ricci Curvature Formula for Weighted Graphs
+		r_e <- 4.0 - (deg[u] + deg[v])
+		ricci_sum <- ricci_sum + r_e
+	}
+
+	mean_ricci <- ricci_sum / nrow(edges)
+	return (mean_ricci)
+}
+
+compute_tda_persistence <- function(vec_matrix) {
+	clean_mat <- vec_matrix[!duplicated(vec_matrix), ]
+	if (nrow(clean_mat) < 15) {
+		return (list(h1 = 0.0, h2 = 0.0))
+	}
+
+	svd_res <- prcomp(clean_mat, rank. = 4, scale. = FALSE)
+	low_dim_mat <- svd_res$x
+
+	dist_max <- as.matrix(dist(low_dim_mat))
+	max_scale <- quantile(dist_max, 0.75)
+
+	if (max_scale <= 0) {
+		return (list(h1 = 0.0, h2 = 0.0))
+	}
+
+	Diag <- tryCatch({
+		ripsDiag(X = low_dim_mat, maxdimension = 2, maxscale = max_scale, library = "GUDHI")
+	}, error = function(e) {
+		return (NULL)
+	})
+
+	if (is.null(Diag) || is.null(Diag$diagram)) {
+		return (list(h1 = 0.0, h2 = 0.0))
+	}
+
+	diag <- Diag$diagram
+	h1_pers <- 0.0
+	h2_pers <- 0.0
+
+	h1_idx <- which(diag[, 1] == 1)
+	if (length(h1_idx) > 0) {
+		h1_pers <- max(diag[h1_idx, 3] - diag[h1_idx, 2])
+	}
+
+	h2_idx <- which(diag[, 1] == 2)
+	if (length(h2_idx) > 0) {
+		h2_pers <- max(diag[h2_idx, 3] - diag[h2_idx, 2])
+	}
+
+	return (list(h1 = h1_pers, h2 = h2_pers))
+}
+
+main_loop <- function() {
+	attach_shm()
+	on.exit(.C("r_shm_detach"))
+
+	cat("[R-Kernel] Starting Real-Time Sensing Loop (Interval: 2s) ...\n")
+
+	repeat {
+		vec_data <- read_vectors(sample_count = 128)
+		adj_data <- read_adjacency()
+
+		mean_ricci <- compute_forman_ricci(adj_data$adj, adj_data$active_nodes)
+		tda_res <- compute_tda_persistence(vec_data$matrix)
+
+		state_flags <- 0
+		if (mean_ricci < -1.5) {
+			state_flags <- bitwOr(state_flags, 2) # PERTURBED
+		}
+		if (mean_ricci < -3.0) {
+			state_flags <- bitwOr(state_flags, 4) # CRITICAL
+		}
+		if (tda_res$h1 > 0.8 || tda_res$h2 > 0.5) {
+			state_flags <- bitwOr(state_flags, 8) # TDA_DISRUPTION
+		}
+
+		.C("r_shm_update_metrics",
+			 as.double(mean_ricci),
+			 as.double(tda_res$h1),
+			 as.double(tda_res$h2),
+			 as.integer(state_flags))
+
+		cat(sprintf("[R-Kernel Sensing] Mean Ricci: %6.2f | H1 Pers: %5.3f | H2 Pers: %5.3f | State Flags: 0x%02X\n",
+								mean_ricci, tda_res$h1, tda_res$h2, state_flags))
+
+		Sys.sleep(2.0)
+	}
+}
+
+main_loop()
+</file>
+
+<file path="src/kernel/r/shm_r_bridge.c">
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include "cytoplasm_v4.h"
+
+static CytoplasmV4 *g_cytoplasm = NULL;
+
+void r_shm_attach(int *status) {
+	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY, sizeof(CytoplasmV4), 0666);
+	if (shmid < 0) {
+		*status = -1;
+		return;
+	}
+
+	void *shm_ptr = shmat(shmid, NULL, 0);
+	if (shm_ptr == (void *)-1) {
+		*status = -2;
+		return;
+	}
+
+	g_cytoplasm = (CytoplasmV4 *)shm_ptr;
+	*status = 0;
+}
+
+void r_shm_read_recent_vectors(int *smaple_count, double *out_matrix, double *out_timestamps) {
+	if (g_cytoplasm == NULL) {
+		return;
+	}
+
+	uint64_t w_idx = g_cytoplasm->header.write_index;
+	int count = *smaple_count;
+	if (count > (int)VECTOR_RING_CAPACITY) {
+		count = (int)VECTOR_RING_CAPACITY;
+	}
+
+	for (int i = 0; i < count; i++) {
+		uint64_t target_idx = (w_idx > (uint64_t)i) ? (w_idx - 1 - i) : 0;
+		uint32_t slot = (uint32_t)(target_idx % VECTOR_RING_CAPACITY);
+
+		out_timestamps[i] = (double)g_cytoplasm->vectors[slot].timestamp_ns;
+		for (int d = 0; d < VECTOR_DIM; d++) {
+			out_matrix[i * VECTOR_DIM + d] = (double)g_cytoplasm->vectors[slot].values[d];
+		}
+	}
+}
+
+void r_shm_read_adjacency_matrix(double *out_adj_256x256, int *active_nodes) {
+	if (g_cytoplasm == NULL) {
+		return;
+	}
+
+	*active_nodes = (int)g_cytoplasm->header.active_node_count;
+	for (int i = 0; i < (int)GRAPH_MAX_NODES; i++) {
+		for (int j = 0; j < (int)GRAPH_MAX_NODES; j++) {
+			out_adj_256x256[i * GRAPH_MAX_NODES + j] = (double)g_cytoplasm->adjacency_matrix.weights[i][j];
+		}
+	}
+}
+
+void r_shm_update_metrics(double *mean_ricci, double *h1_persistence, double *h2_persistence, int *state_flags) {
+	if (g_cytoplasm == NULL) {
+		return;
+	}
+
+	g_cytoplasm->header.mean_ricci_curvature = *mean_ricci;
+	g_cytoplasm->coefficients.tda_h1_persistence = *h1_persistence;
+	g_cytoplasm->coefficients.tda_h2_persistence = *h2_persistence;
+	g_cytoplasm->header.state_flags = (uint32_t)(*state_flags);
+}
+
+void r_shm_detach(void) {
+	if (g_cytoplasm != NULL) {
+		shmdt((void *)g_cytoplasm);
+		g_cytoplasm = NULL;
+	}
+}
+</file>
+
+<file path="tests/test_shm.c">
+/**
+ * @file test_shm.c
+ * @brief REVELATIO II Cytoplasm IV Shared Memory Attach & Sanity Test
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <errno.h>
+#include <inttypes.h>
+#include "../include/cytoplasm_v4.h"
+
+int main(void) {
+	printf("=== REVELATIO II // Cytoplasm IV Shared Memory Vrification ===\n\n");
+
+	/* 1. Compile-Time & Runtime Layout Checks */
+	printf("[1] Checking Structure Offsets & Memory Sized...\n");
+	printf("  - Size of HeaderSection: %zu B\n", sizeof(HeaderSection));
+	printf("  - Size of TensorCoefficientSection: %zu B\n", sizeof(TensorCoefficientSection));
+	printf("  - Size of ParticleOutputArea: %zu B\n", sizeof(ParticleOutputArea));
+	printf("  - Size of AdjacencyMatrixSection: %zu B\n", sizeof(AdjacencyMatrixSection));
+	printf("  - Size of VectorSlot: %zu B\n", sizeof(VectorSlot));
+	printf("  - Size of TextSlot: %zu B\n", sizeof(TextSlot));
+	printf("  - Total CytoplasmV4 Size: %zu B (%.2f MB)\n\n",
+			sizeof(CytoplasmV4), (double)sizeof(CytoplasmV4) / (1024.0 * 1024.0));
+
+	printf("  - Offset of header: 0x%08ZX\n", offsetof(CytoplasmV4, header));
+	printf("  - Offset of coefficients: 0x%08ZX\n", offsetof(CytoplasmV4, coefficients));
+	printf("  - Offset of particles_output: 0x%08ZX\n", offsetof(CytoplasmV4, particles_output));
+	printf("  - Offset of adjacency_matrix: 0x%08ZX (Target: 0x00004000)\n", offsetof(CytoplasmV4, adjacency_matrix));
+	printf("  - Offset of vectors: 0x%08ZX\n", offsetof(CytoplasmV4, vectors));
+	printf("  - Offset of text_lru: 0x%08ZX\n\n", offsetof(CytoplasmV4, text_lru));
+
+	if (offsetof(CytoplasmV4, adjacency_matrix) != 0x4000) {
+		fprintf(stderr, "[FATAL ERROR] Adjacency matrix offset mismatch! Expected 0x4000.\n");
+		return EXIT_FAILURE;
+	}
+
+	/* 2. Attach or Create Shared Memory */
+	printf("[2] Attaching to System V Shared Memory (Key: 0x%08X, Size: 512MB)...\n", CYTOPLASM_V4_IPC_KEY);
+	
+	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY, sizeof(CytoplasmV4), IPC_CREAT | 0666);
+	if (shmid < 0) {	
+		perror("  [ERROR] shmget failed");
+		return EXIT_FAILURE;
+	}
+	printf("  - shmget SUCCESS: shmid = %d\n", shmid);
+
+	void *shm_ptr = shmat(shmid, NULL, 0);
+	if (shm_ptr == (void *)-1) {
+		perror("  [ERROR] shmat failed");
+		return EXIT_FAILURE;
+	}
+	printf("  - shmat SUCCESS: Attachied at virtual address %p\n\n", shm_ptr);
+
+	CytoplasmV4 *cytoplasm = (CytoplasmV4 *)shm_ptr;
+
+	/* 3. Initialize or Validate Header */
+	printf("[3] Validating Header Magic Number...\n");
+	if (cytoplasm->header.magic_number != 0x4150455052455634ULL) {
+		printf("  - Uninitialized Shared Memory segment detected. Initializing Header...\n");
+		cytoplasm->header.magic_number = 0x4150455052455634ULL; /* "APEPREV4" */
+		cytoplasm->header.write_index = 0;
+		cytoplasm->header.read_index = 0;
+		cytoplasm->header.re_lambda_max = -0.45;
+		cytoplasm->header.mean_ricci_curvature = 0.0;
+		cytoplasm->header.state_flags = STATE_FLAG_STABLE;
+		cytoplasm->header.active_node_count = 0;
+		cytoplasm->header.last_updated_epoch_ns = 0;
+		printf("  - Header Initialized: Magic = 0x%" PRIX64 " [APEPREV4]\n", cytoplasm->header.magic_number);
+	} else {
+		printf("  - Existing Shared Memory Segment Verified: Magic = 0x%" PRIX64 " [APEPREV4]\n", cytoplasm->header.magic_number);
+	}
+
+	/* 4. Execute Read/Write Sanity Tests */
+	printf("\n[4] Executing Read/Write Sanity Tests...\n");
+	cytoplasm->header.write_index++;
+	uint64_t current_widx = cytoplasm->header.write_index;
+
+	/* Test Vector Ring Buffer Write */
+	uint32_t v_slot_idx = (uint32_t)(current_widx % VECTOR_RING_CAPACITY);
+	cytoplasm->vectors[v_slot_idx].slot_id = current_widx;
+	cytoplasm->vectors[v_slot_idx].timestamp_ns = 1700000000000000000ULL;
+	cytoplasm->vectors[v_slot_idx].values[0] = 1.2345f;
+	cytoplasm->vectors[v_slot_idx].values[127] = -9.8765f;
+
+	printf("  - Vector Ring Slot [%u] Write OK (Slot ID: %"PRIu64 ", Val[0]: %.4f, Val[127]: %.4f)\n",
+			v_slot_idx, cytoplasm->vectors[v_slot_idx].slot_id,
+			cytoplasm->vectors[v_slot_idx].values[0], cytoplasm->vectors[v_slot_idx].values[127]);
+
+	/* Test Text LRU Buffer Write */
+	uint32_t t_slot_idx = (uint32_t)(current_widx % TEXT_LRU_CAPACITY);
+	cytoplasm->text_lru[t_slot_idx].slot_id = current_widx;
+	snprintf(cytoplasm->text_lru[t_slot_idx].uri, TEXT_URI_MAX_LEN, "at://did:plc:revelatio2/app.bsky.feed.post/test001");
+	snprintf(cytoplasm->text_lru[t_slot_idx].author_did, TEXT_AUTHOR_MAX_LEN, "did:plc:revelatio2");
+	snprintf(cytoplasm->text_lru[t_slot_idx].text, TEXT_BODY_MAX_LEN, "REVELATIO II Cytoplasm IV SHM Test Post");
+	cytoplasm->text_lru[t_slot_idx].structural_role = ROLE_SINGULARITY_CATALYST;
+
+	printf("  - Text LRU Slot [%u] Write OK (URI: %s, Role: 0x%02X)\n",
+			t_slot_idx, cytoplasm->text_lru[t_slot_idx].uri, cytoplasm->text_lru[t_slot_idx].structural_role);
+
+	/* Test Adjacency Matrix Write */
+	cytoplasm->adjacency_matrix.weights[0][1] = 0.85f;
+	printf("  - Adjacency Matrix Weight [0][1] Write OK (Weight: %.2f)\n", cytoplasm->adjacency_matrix.weights[0][1]);
+
+	/* 5. Detach */
+	printf("\n[5] Detaching Shared Memory...\n");
+	if (shmdt(shm_ptr) < 0) {
+		perror("  [ERROR] shmdt failed");
+		return EXIT_FAILURE;
+	}
+	printf("  - shmdt SUCCESS. Shared Memory Verification Passed Cleanly!\n\n");
+	printf("=== ALL CHECKS PASSED ===\n");
+
+	return EXIT_SUCCESS;
+}
+</file>
+
+=======
+>>>>>>> origin/master
 <file path="ARCHITECUTURE.md">
 # REVELATIO II : System Engineering & Mathematical Specification
 ### Dual-Layer Tensor-Field & Graph-PDE Autopoietic Sensing Engine
@@ -241,6 +1788,17 @@ CREATE TABLE IF NOT EXISTS critical_trigger_posts_v2 (
     *   WebUI 上でメッシュが赤色スパイク形状に変形し、抽出された起爆ポストが 3D 空間上の特異点座標に正確にバインドされてホログラフィック表示されることを確認する。
 </file>
 
+<<<<<<< HEAD
+<file path="go.mod">
+module github.com/TakaoTachibana/revelatio-ii
+
+go 1.26.5
+
+require github.com/gorilla/websocket v1.5.3
+</file>
+
+=======
+>>>>>>> origin/master
 <file path="README.md">
 # REVELATIO II
 > **Dual-Layer Tensor-Field & Graph-PDE Autopoietic Sensing Engine**
@@ -265,4 +1823,54 @@ REVELATIO II は、Bluesky のリアルタイムストリームを 128 次元特
 詳細なシステム構成、数式、共有メモリ領域マップについては [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) を参照してください。
 </file>
 
+<<<<<<< HEAD
+<file path=".gitignore">
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Shared Memory & Native Builds
+test_shm
+*.o
+*.so
+*.a
+*.dylib
+
+# Go
+/src/ingester/ingester
+/src/ingester/vendor/
+
+# .NET / C#
+bin/
+obj/
+*.user
+*.userosscache
+*.sln.docstates
+
+# Node.js / React
+node_modules/
+/src/web/dist/
+/src/web/build/
+.env.local
+
+# R
+.Rproj.user/
+.Rhistory
+.Rdata
+.Ruserdata
+
+# Julia
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+
+# Database & Logs
+*.log
+*.so
+</file>
+
+=======
+>>>>>>> origin/master
 </files>

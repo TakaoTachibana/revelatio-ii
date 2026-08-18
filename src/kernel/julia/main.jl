@@ -69,7 +69,7 @@ function main()
 					residual = Float64(sindy_res.residual)
 				)
 
-				Threads.@spawn begin
+				@async begin
 					try
 						HTTP.post(GATEWAY_URL, ["Content-Type" => "application/json"], JSON3.write(payload); connect_timeout = 1, request_timeout = 1)
 						println("  [Gateway Sync] Disruption event dispatched to Gateway.")
