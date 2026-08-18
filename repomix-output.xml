@@ -40,12 +40,19 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
-<<<<<<< HEAD
+db/
+  migrations/
+    V4__cytoplasm_v4_schema.sql
 docs/
   ARCHITECTURE2.md
 include/
   cytoplasm_v4.h
 src/
+  gateway/
+    GatewayService/
+      CytoplasmV4Reader.cs
+      GatewayService.csproj
+      Program.cs
   ingester/
     main.go
     shared_memory.c
@@ -61,29 +68,72 @@ src/
     r/
       ricci_tda_kernel.R
       shm_r_bridge.c
+      test_disruption_injection.R
+  web/
+    src/
+      components/
+        HeaderHud.css
+        HeaderHud.tsx
+        LogStreamPanel.css
+        LogStreamPanel.tsx
+        TelemetryPanel.css
+        TelemetryPanel.tsx
+      hooks/
+        useAutopoieticStream.ts
+      App.css
+      App.tsx
+      index.tsx
+    package.json
+    rsbuild.config.ts
 tests/
   test_shm.c
 .gitignore
 ARCHITECUTURE.md
 go.mod
-=======
-src/
-  kernel/
-    julia/
-      shm_julia_bridge.so
-    r/
-      shm_r_bridge.so
-tests/
-  test_shm
-ARCHITECUTURE.md
->>>>>>> origin/master
 README.md
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
 
-<<<<<<< HEAD
+<file path="db/migrations/V4__cytoplasm_v4_schema.sql">
+CREATE DATABASE IF NOT EXISTS revelatio_db
+	CHARACTER SET utf8mb4
+	COLLATE utf8mb4_unicode_ci;
+
+USE revelatio_db;
+
+CREATE TABLE IF NOT EXISTS spctrum_history_v2 (
+	id BIGINT AUTO_INCREMENT PRIMARY KEY,
+	calculatied_at_ns BIGINT NOT NULL,
+	re_rambda_max DOUBLE NOT NULL,
+	mean_ricci_curvature DOUBLE NOT NULL,
+	tda_h1_persistence DOUBLE NOT NULL,
+	tda_h2_persistence DOUBLE NOT NULL,
+	sindy_residual DOUBLE NOT NULL,
+	state_flags INT UNSIGNED NOT NULL,
+	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+	INDEX idx_calculated_at (calculated_at_ns),
+	INDEX idx_re_lambda (re_labmda_max)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS critical_trigger_posts_v2 (
+	id BIGINT AUTO_INCREMENT PRIMARY KEY,
+	spectrum_id BIGINT NOT NULL,
+	slot_index INT UNSIGNED NOT NULL,
+	post_uri VARCHAR(256) NOT NULL,
+	author_did VARCHAR(128) NOT NULL,
+	post_text TEXT NOT NULL,
+	contribution_score DOUBLE NOT NULL,
+	local_ricci_curvature DOUBLE NOT NULL,
+	structural_role ENUM('SINGULARITY_CATALISY', 'BOUNDARY_BREAKER', 'VORTICITY_ENTER') NOT NULL,
+	FOREIGN KEY (spectrum_id) REFERENCES spectrum_history_v2(id) ON DELETE CASCADE,
+	INDEX idx_uri (post_uri),
+	INDEX idx_author (author_did),
+	INDEX idx_role (structural_role)
+) ENGIN=InnoDB DEFAULT CHARSET=utf8mb4;
+</file>
+
 <file path="docs/ARCHITECTURE2.md">
 # REVELATIO II : System Engineering, Mathematical, & Phenomenological Specification
 ### Dual-Layer Tensor-Field & Graph-PDE Autopoietic Sensing Engine
@@ -401,6 +451,1716 @@ _Static_assert(sizeof(TextSlot) == 20480, "TextSlot size must be exactly 20,480 
 #endif /* CYTOPLASM_V4_H */
 </file>
 
+<file path="src/gateway/GatewayService/CytoplasmV4Reader.cs">
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace GatewayService.Services;
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public unsafe struct TriggerParticle {
+	public uint SlotId;
+	public uint StructuralRole;
+	public double AttributionScore;
+	public double LocalRicciCurvature;
+}
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public unsafe struct ParticleOutputArea {
+	public uint TriggerCount;
+	public fixed byte ParticlesRaw[64 * 24];
+	public ulong CalculatedAtNs;
+	public fixed byte Reserved[128];
+}
+
+public record TriggerPostDto (
+	uint SlotIndex,
+	string Uri,
+	string AuthorDid,
+	string Text,
+	double ContributionScore,
+	double LocalRicciCurvature,
+	string StructuralRole
+);
+
+public unsafe class CytoplasmV4Reader : IDisposable {
+	private const int CYTOPLASM_V4_IPC_KEY = 0x41504550;
+	private const int TEXT_URI_MAX_LEN = 256;
+	private const int TEXT_AUTHOR_MAX_LEN = 128;
+	private const int TEXT_BODY_MAX_LEN = 2048;
+	private const int TEXT_SLOT_SIZE = 20480;
+
+	private const int PARTICLE_OUTPUT_OFFSET = 0x0DC0;
+	private const long TEXT_LRU_OFFSET = 0x0C044000;
+	private const uint TEXT_LRU_CAPACITY = 16384;
+
+	[DllImport("libc", SetLastError = true)]
+	private static extern int shmget(int key, nuint size, int shmflg);
+
+	[DllImport("libc", SetLastError = true)]
+	private static extern void* shmat(int shmid, void* shmaddr, int shmflg);
+
+	[DllImport("libc", SetLastError = true)]
+	private static extern int shmdt(void* shmaddr);
+
+	private readonly void* _shmPtr;
+
+	public CytoplasmV4Reader() {
+		int shmId = shmget(CYTOPLASM_V4_IPC_KEY, 0, 0);
+		if (shmId < 0) {
+			Console.WriteLine("[Gateway Warning] Cytoplasm IV SHM (0x41504550) not found. Ingester required.");
+			_shmPtr = null;
+			return;
+		}
+
+		_shmPtr = shmat(shmId, null, 0);
+		if (_shmPtr == (void*)-1) {
+			Console.WriteLine("[Gateway Error] Failed to attach Shared Memory.");
+			_shmPtr = null;
+		} else {
+			Console.WriteLine("[Gateway Service] Attached to Cytoplasm IV Shared Memory (512MB).");
+		}
+	}
+
+	public List<TriggerPostDto> ReadTopTriggerPosts() {
+		var posts = new List<TriggerPostDto>();
+		if (_shmPtr == null) {
+			return posts;
+		}
+
+		byte* basePtr = (byte*)_shmPtr;
+		ParticleOutputArea* particleArea = (ParticleOutputArea*)(basePtr + PARTICLE_OUTPUT_OFFSET);
+
+		uint count = Math.Min(particleArea->TriggerCount, 64U);
+		if (count == 0) {
+			return posts;
+		}
+
+		byte* textLruBase = basePtr + TEXT_LRU_OFFSET;
+		TriggerParticle* particles = (TriggerParticle*)particleArea->ParticlesRaw;
+
+		for (int i = 0; i < count; i++) {
+			uint slotIdx = particles[i].SlotId % TEXT_LRU_CAPACITY;
+			byte* slotPtr = textLruBase + (slotIdx * TEXT_SLOT_SIZE);
+
+			string uri = ReadUtf8String(slotPtr + 16, TEXT_URI_MAX_LEN);
+			string author = ReadUtf8String(slotPtr + 16 + TEXT_URI_MAX_LEN, TEXT_AUTHOR_MAX_LEN);
+			string text = ReadUtf8String(slotPtr + 16 + TEXT_URI_MAX_LEN + TEXT_AUTHOR_MAX_LEN, TEXT_BODY_MAX_LEN);
+			
+			if (string.IsNullOrWhiteSpace(author) && string.IsNullOrWhiteSpace(text)) {
+				continue;
+			}
+
+			string roleStr = (particles[i].StructuralRole) switch {
+				0x01 => "SINGULARITY_CATALYST",
+				0x02 => "BOUNDARY_BREAKER",
+				0x04 => "VORTICITY_CENTER",
+				_ => "SINGULARITY_CATALYST"
+			};
+
+			posts.Add(new TriggerPostDto (
+				slotIdx,
+				uri,
+				author,
+				text,
+				particles[i].AttributionScore,
+				particles[i].LocalRicciCurvature,
+				roleStr
+			));
+		}
+		return posts;
+	}
+
+	private static string ReadUtf8String(byte* ptr, int maxLen) {
+		int len = 0;
+		while (len < maxLen && ptr[len] != 0) {
+			len++;
+		}
+
+		if (len == 0) {
+			return string.Empty;
+		}
+
+		return Encoding.UTF8.GetString(ptr, len).TrimEnd('\0', ' ', '\r', '\n', '\t');
+	}
+
+	public void Dispose() {
+		if (_shmPtr != null && _shmPtr != (void*)-1) {
+			shmdt(_shmPtr);
+		}
+	}
+}
+</file>
+
+<file path="src/gateway/GatewayService/GatewayService.csproj">
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Dapper" Version="2.1.35" />
+		<PackageReference Include="MySqlConnector" Version="2.3.7" />
+	</ItemGroup>
+
+</Project>
+</file>
+
+<file path="src/ingester/shared_memory.c">
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include "../../include/cytoplasm_v4.h"
+
+CytoplasmV4* cytoplasm_v4_attach(int *shmid_out) {
+	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY, sizeof(CytoplasmV4), IPC_CREAT | 0666);
+	if (shmid < 0) {
+		perror("[Cytoplasm IV C-Error] shmget failed");
+		return NULL;
+	}
+
+	void *shm_ptr = shmat(shmid, NULL, 0);
+	if (shm_ptr == (void *)-1) {
+		perror("[Cytoplasm IV C-Error] shmat failed");
+		return NULL;
+	}
+
+	if (shmid_out != NULL) {
+		*shmid_out = shmid;
+	}
+
+	CytoplasmV4 *cytoplasm = (CytoplasmV4 *)shm_ptr;
+
+	if (cytoplasm->header.magic_number != 0x4150455052455634ULL) {
+		cytoplasm->header.magic_number = 0x4150455052455634ULL; /* "APERREV4" */
+		cytoplasm->header.re_lambda_max = -0.45;
+		cytoplasm->header.mean_ricci_curvature = 0.0;
+		cytoplasm->header.state_flags = STATE_FLAG_STABLE;
+		cytoplasm->header.write_index = 0;
+		cytoplasm->header.read_index = 0;
+		cytoplasm->header.active_node_count = 0;
+	}
+
+	return cytoplasm;
+}
+
+int cytoplasm_v4_detach(CytoplasmV4 *cytoplasm) {
+	if (cytoplasm == NULL) {
+		return -1;
+	}
+
+	return shmdt((void *)cytoplasm);
+}
+</file>
+
+<file path="src/ingester/shm_writer.go">
+package main
+
+/*
+#cgo CFLAGS: -I../../include
+#include "../../include/cytoplasm_v4.h"
+
+CytoplasmV4* cytoplasm_v4_attach(int *shmid_out);
+int cytoplasm_v4_detach(CytoplasmV4 *cytoplasm);
+*/
+import "C"
+
+import (
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
+	"unsafe"
+)
+
+type SharedMemoryWriter struct {
+	shmPtr *C.CytoplasmV4
+	shmID C.int
+	nodeMap map[string]int
+	nodeCount int
+	mu sync.Mutex
+}
+
+func NewSharedMemoryWriter() (*SharedMemoryWriter, error) {
+	var shmID C.int
+	ptr := C.cytoplasm_v4_attach(&shmID)
+	if ptr == nil {
+		return nil, fmt.Errorf("failed to attach to Cytoplasm IV 512MB shared memory")
+	}
+
+	return &SharedMemoryWriter {
+		shmPtr: ptr,
+		shmID: shmID,
+		nodeMap: make(map[string]int),
+	}, nil
+}
+
+func (w *SharedMemoryWriter) getOrAssignNodeIndex(did string) int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if idx, exists := w.nodeMap[did]; exists {
+		return idx
+	}
+
+	if w.nodeCount < C.GRAPH_MAX_NODES {
+		idx := w.nodeCount
+		w.nodeMap[did] = idx
+		w.nodeCount++
+		atomic.StoreUint32((*uint32)(unsafe.Pointer(&w.shmPtr.header.active_node_count)), uint32(w.nodeCount))
+		return idx
+	}
+
+	hash := 0
+	for _, ch := range did {
+		hash = (hash * 31 + int(ch)) % C.GRAPH_MAX_NODES
+	}
+	return hash
+}
+
+func (w *SharedMemoryWriter) WritePost(uri, authorDID, text string, vector [128]float32, targetDID string) uint64 {
+	nowNs := uint64(time.Now().UnixNano())
+
+	// 1. Atomic Index Increment
+	writeIdx := atomic.AddUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.write_index)), 1) - 1
+
+	// 2. Vector Ring Buffer Write (~192MB Zone)
+	vSlotIdx := writeIdx % C.VECTOR_RING_CAPACITY
+	vSlot := &w.shmPtr.vectors[vSlotIdx]
+	vSlot.slot_id = C.uint64_t(writeIdx)
+	vSlot.timestamp_ns = C.uint64_t(nowNs)
+
+	for i := 0; i < C.VECTOR_DIM; i++ {
+		vSlot.values[i] = C.float(vector[i])
+	}
+
+	// 3. Text LRU Buffer Write (~320MB Zone)
+	tSlotIdx := writeIdx % C.TEXT_LRU_CAPACITY
+	tSlot := &w.shmPtr.text_lru[tSlotIdx]
+	tSlot.slot_id = C.uint64_t(writeIdx)
+	tSlot.timestamp_ns = C.uint64_t(nowNs)
+
+	copyCString(unsafe.Pointer(&tSlot.uri[0]), uri, C.TEXT_URI_MAX_LEN)
+	copyCString(unsafe.Pointer(&tSlot.author_did[0]), authorDID, C.TEXT_AUTHOR_MAX_LEN)
+	copyCString(unsafe.Pointer(&tSlot.text[0]), text, C.TEXT_BODY_MAX_LEN)
+
+	// 4. Graph Adjacency Matrix Update (Replay/Quote/Mention Interfaction Topology)
+	if targetDID != "" {
+		srcIdx := w.getOrAssignNodeIndex(authorDID)
+		dstIdx := w.getOrAssignNodeIndex(targetDID)
+
+		weightPtr := &w.shmPtr.adjacency_matrix.weights[srcIdx][dstIdx]
+		currentWeight := float32(*weightPtr)
+		newWeight := currentWeight * 0.95 + 1.0
+		if newWeight > 10.0 {
+			newWeight = 10.0
+		}
+		*weightPtr = C.float(newWeight)
+	}
+
+	atomic.StoreUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.last_updated_epoch_ns)), nowNs)
+
+	return writeIdx
+}
+
+func copyCString(dst unsafe.Pointer, src string, maxLen int) {
+	bytes := []byte(src)
+	if len(bytes) >= maxLen {
+		bytes = bytes[:maxLen - 1]
+	}
+	dstBuf := (*[1 << 30]byte)(dst)[:maxLen:maxLen]
+	copy(dstBuf, bytes)
+	dstBuf[len(bytes)] = 0
+}
+
+func (w *SharedMemoryWriter) Close() {
+	if w.shmPtr != nil {
+		C.cytoplasm_v4_detach(w.shmPtr)
+	}
+}
+</file>
+
+<file path="src/kernel/julia/Manifest.toml">
+# This file is machine-generated - editing it directly is not advised
+
+julia_version = "1.12.6"
+manifest_format = "2.0"
+project_hash = "5de53b4e6860caf39f846bebd57682dbe9340e61"
+
+[[deps.Artifacts]]
+uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
+version = "1.11.0"
+
+[[deps.Base64]]
+uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
+version = "1.11.0"
+
+[[deps.CodecZlib]]
+deps = ["TranscodingStreams", "Zlib_jll"]
+git-tree-sha1 = "970758a3d591a2a5c2a907c53f2e2f8c1b1d3537"
+uuid = "944b1d66-785c-5afd-91f1-9de20f533193"
+version = "0.7.9"
+
+[[deps.CompilerSupportLibraries_jll]]
+deps = ["Artifacts", "Libdl"]
+uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
+version = "1.3.0+1"
+
+[[deps.Dates]]
+deps = ["Printf"]
+uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
+version = "1.11.0"
+
+[[deps.EnumX]]
+git-tree-sha1 = "c49898e8438c828577f04b92fc9368c388ac783c"
+uuid = "4e289a0a-7415-4d19-859d-a7e5c4648b56"
+version = "1.0.7"
+
+[[deps.HTTP]]
+deps = ["Base64", "CodecZlib", "Dates", "EnumX", "PrecompileTools", "Random", "Reseau", "SHA", "URIs", "UUIDs", "Zlib_jll"]
+git-tree-sha1 = "d6e390d1515836237b837fb7b6fca7ba1d752db6"
+uuid = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+version = "2.6.5"
+
+[[deps.JSON3]]
+deps = ["Dates", "Mmap", "Parsers", "PrecompileTools", "StructTypes", "UUIDs"]
+git-tree-sha1 = "411eccfe8aba0814ffa0fdf4860913ed09c34975"
+uuid = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+version = "1.14.3"
+
+    [deps.JSON3.extensions]
+    JSON3ArrowExt = ["ArrowTypes"]
+
+    [deps.JSON3.weakdeps]
+    ArrowTypes = "31f734f8-188a-4ce0-8406-c8a06bd891cd"
+
+[[deps.Libdl]]
+uuid = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+version = "1.11.0"
+
+[[deps.LinearAlgebra]]
+deps = ["Libdl", "OpenBLAS_jll", "libblastrampoline_jll"]
+uuid = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+version = "1.12.0"
+
+[[deps.Mmap]]
+uuid = "a63ad114-7e13-5084-954f-fe012c677804"
+version = "1.11.0"
+
+[[deps.NetworkOptions]]
+uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
+version = "1.3.0"
+
+[[deps.OpenBLAS_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
+uuid = "4536629a-c528-5b80-bd46-f80d51c5b363"
+version = "0.3.29+0"
+
+[[deps.OpenSSL_jll]]
+deps = ["Artifacts", "Libdl"]
+uuid = "458c3c95-2e84-50aa-8efc-19380b2a3a95"
+version = "3.5.4+0"
+
+[[deps.Parsers]]
+deps = ["Dates", "PrecompileTools", "UUIDs"]
+git-tree-sha1 = "3de8f5e6e90ebfa8d6d1f86997d6cdcd6a912ff3"
+uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
+version = "2.8.7"
+
+[[deps.PrecompileTools]]
+deps = ["Preferences"]
+git-tree-sha1 = "edbeefc7a4889f528644251bdb5fc9ab5348bc2c"
+uuid = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
+version = "1.3.4"
+
+[[deps.Preferences]]
+deps = ["TOML"]
+git-tree-sha1 = "8b770b60760d4451834fe79dd483e318eee709c4"
+uuid = "21216c6a-2e73-6563-6e65-726566657250"
+version = "1.5.2"
+
+[[deps.Printf]]
+deps = ["Unicode"]
+uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+version = "1.11.0"
+
+[[deps.Random]]
+deps = ["SHA"]
+uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+version = "1.11.0"
+
+[[deps.Reseau]]
+deps = ["NetworkOptions", "OpenSSL_jll", "PrecompileTools", "Random", "SHA"]
+git-tree-sha1 = "ca7b7e19c33dd5dfae91369724d7edc198da29f5"
+uuid = "802f3686-a58f-41ce-bb0c-3c43c75bba36"
+version = "1.4.0"
+
+[[deps.SHA]]
+uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+version = "0.7.0"
+
+[[deps.Statistics]]
+deps = ["LinearAlgebra"]
+git-tree-sha1 = "ae3bb1eb3bba077cd276bc5cfc337cc65c3075c0"
+uuid = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+version = "1.11.1"
+
+    [deps.Statistics.extensions]
+    SparseArraysExt = ["SparseArrays"]
+
+    [deps.Statistics.weakdeps]
+    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+
+[[deps.StructTypes]]
+deps = ["Dates", "UUIDs"]
+git-tree-sha1 = "159331b30e94d7b11379037feeb9b690950cace8"
+uuid = "856f2bd8-1eba-4b0a-8007-ebc267875bd4"
+version = "1.11.0"
+
+[[deps.TOML]]
+deps = ["Dates"]
+uuid = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+version = "1.0.3"
+
+[[deps.TranscodingStreams]]
+git-tree-sha1 = "0c45878dcfdcfa8480052b6ab162cdd138781742"
+uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
+version = "0.11.3"
+
+[[deps.URIs]]
+git-tree-sha1 = "908fec9df6c5de98548ead82a468c95ccf6cd263"
+uuid = "5c2747f8-b7ea-4ff2-ba2e-563bfd36b1d4"
+version = "1.7.0"
+
+[[deps.UUIDs]]
+deps = ["Random", "SHA"]
+uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
+version = "1.11.0"
+
+[[deps.Unicode]]
+uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
+version = "1.11.0"
+
+[[deps.Zlib_jll]]
+deps = ["Libdl"]
+uuid = "83775a58-1f1d-513f-b197-d71354ab007a"
+version = "1.3.1+2"
+
+[[deps.libblastrampoline_jll]]
+deps = ["Artifacts", "Libdl"]
+uuid = "8e850b90-86db-534c-a0d3-1478176c7d93"
+version = "5.15.0+0"
+</file>
+
+<file path="src/kernel/julia/Project.toml">
+[deps]
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+</file>
+
+<file path="src/kernel/julia/sindy_pde.jl">
+module SINDyPDE
+
+using LinearAlgebra
+using Statistics
+using Printf
+
+struct SINDyResult
+	equation_str::String
+	coefficients::Vector{Float64}
+	residual::Float64
+end
+
+function fit_sindy_pde(U::Matrix{Float64})
+	dim, T = size(U)
+	if T < 10
+		return SINDyResult("delu/delt = 0", [0.0, 0.0, 0.0], 0.0)
+	end
+	dt = 0.1
+	dU_dt = (U[:, 2:end] .- U[:, 1:end - 1]) ./ dt
+	
+	Laplacian_U = zeros(Float64, dim, T - 1)
+	for t in 1:T - 1
+		u_t = U[:, t]
+		lap = circshift(u_t, 1) .+ circshift(u_t, -1) .- 2.0 .* u_t
+		Laplacian_U[:, t] = lap
+	end
+
+	u_vec = vec(U[:, 1:end - 1])
+	lap_vec = vec(Laplacian_U)
+	u_cubic_vec = u_vec .^ 3
+	du_vec = vec(dU_dt)
+
+	Theta = [lap_vec u_vec u_cubic_vec]
+	Xi = Theta \ du_vec
+
+	for iter in 1:3
+		small_inds = abs.(Xi) .< 0.01
+		Xi[small_inds] .= 0.0
+		for i in 1:size(Theta, 2)
+			if !small_inds[i]
+				Xi[i] = Theta[:, i] \ du_vec
+			end
+		end
+	end
+
+	D_coeff = Xi[1]
+	lambda_coeff = Xi[2]
+	cubic_coeff = Xi[3]
+
+	res_val = norm(Theta * Xi .- du_vec) / sqrt(length(du_vec))
+	eq_str = @sprintf("delu/delt = %.4fdel^2u + %.4fu %+.4fu^3", D_coeff, lambda_coeff, cubic_coeff)
+
+	return SINDyResult(eq_str, [D_coeff, lambda_coeff, cubic_coeff], res_val)
+end
+
+end # module
+</file>
+
+<file path="src/kernel/r/test_disruption_injection.R">
+# REVELATIO II: Disruption Sensing Validation Test
+
+source("ricci_tda_kernel.R")
+
+cat("====================================================\n")
+cat(" [TEST 1] Standard Normal State (Baseline Verification)\n")
+cat("====================================================\n")
+# 通常の疎なランダムグラフ
+set.seed(42)
+norm_adj <- matrix(0, 64, 64)
+for(i in 1:63) { norm_adj[i, i+1] <- 1; norm_adj[i+1, i] <- 1 } # チェーン構造
+r_norm <- compute_forman_ricci(norm_adj, 64)
+cat(sprintf("-> Normal Mean Ricci: %6.2f (Expected: ~0.00)\n\n", r_norm))
+
+cat("====================================================\n")
+cat(" [TEST 2] Hub Concentration / Star Topology (Perturbed/Critical)\n")
+cat("====================================================\n")
+# ノード1に全ノードが集中（スター型ハブ構造）
+star_adj <- matrix(0, 64, 64)
+star_adj[1, 2:64] <- 1
+star_adj[2:64, 1] <- 1
+r_star <- compute_forman_ricci(star_adj, 64)
+
+flag_star <- 0
+if (r_star < -0.3) flag_star <- bitwOr(flag_star, 2) # PERTURBED (0x02)
+if (r_star < -0.6) flag_star <- bitwOr(flag_star, 4) # CRITICAL (0x04)
+cat(sprintf("-> Star Topology Mean Ricci: %6.2f | Flags: 0x%02X\n", r_star, flag_star))
+cat(sprintf("   Expected Flags: 0x06 (PERTURBED + CRITICAL)\n\n"))
+
+cat("====================================================\n")
+cat(" [TEST 3] Topological Loop Formation (TDA Disruption)\n")
+cat("====================================================\n")
+# 128次元空間上に明瞭な円環（1D Persistent Loop）を生成
+theta <- seq(0, 2*pi, length.out = 50)
+loop_vecs <- matrix(rnorm(50 * 128, sd = 0.01), nrow = 50, ncol = 128)
+loop_vecs[, 1] <- cos(theta) * 5.0
+loop_vecs[, 2] <- sin(theta) * 5.0
+
+tda_res <- compute_tda_persistence(loop_vecs)
+flag_tda <- 0
+if (tda_res$h1 > 0.3 || tda_res$h2 > 0.2) flag_tda <- bitwOr(flag_tda, 8) # TDA_DISRUPTION (0x08)
+
+cat(sprintf("-> Loop H1 Persistence: %5.3f | H2 Persistence: %5.3f | Flags: 0x%02X\n", 
+            tda_res$h1, tda_res$h2, flag_tda))
+cat(sprintf("   Expected Flags: 0x08 (TDA_DISRUPTION)\n\n"))
+</file>
+
+<file path="src/web/src/components/HeaderHud.css">
+.header-hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 20px;
+  backdrop-filter: blur(12px);
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.system-tag {
+  color: var(--color-accent);
+}
+
+.header-metrics {
+  display: flex;
+  gap: 24px;
+  font-size: 12px;
+}
+
+.metric-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.metric-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.status-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 11px;
+}
+
+.status-badge.stable { background: rgba(16, 185, 129, 0.2); color: var(--color-stable); border: 1px solid var(--color-stable); }
+.status-badge.perturbed { background: rgba(245, 158, 11, 0.2); color: var(--color-perturbed); border: 1px solid var(--color-perturbed); }
+.status-badge.critical { background: rgba(239, 68, 68, 0.2); color: var(--color-critical); border: 1px solid var(--color-critical); }
+</file>
+
+<file path="src/web/src/components/HeaderHud.tsx">
+import React from 'react';
+import './HeaderHud.css';
+
+interface Props {
+  connected: boolean;
+  stateFlags: number;
+  reLambdaMax: number;
+  writeIndex: number;
+}
+
+export const HeaderHud: React.FC<Props> = ({ connected, stateFlags, reLambdaMax, writeIndex }) => {
+  const getStatus = () => {
+    if ((stateFlags & 0x04) !== 0 || reLambdaMax > -0.05) return { label: 'CRITICAL', cls: 'critical' };
+    if ((stateFlags & 0x02) !== 0 || reLambdaMax > -0.30) return { label: 'PERTURBED', cls: 'perturbed' };
+    return { label: 'STABLE', cls: 'stable' };
+  };
+
+  const status = getStatus();
+
+  return (
+    <header className="header-hud">
+      <div className="header-title">
+        <span className="system-tag">REVELATIO II</span>
+        <span>// AUTOPOIETIC TELEMETRY CONTROL</span>
+      </div>
+
+      <div className="header-metrics">
+        <div className="metric-item">
+          <span className="metric-label">GATEWAY LINK</span>
+          <span style={{ color: connected ? 'var(--color-stable)' : 'var(--color-critical)' }}>
+            {connected ? 'ONLINE' : 'DISCONNECTED'}
+          </span>
+        </div>
+        <div className="metric-item">
+          <span className="metric-label">WRITE INDEX</span>
+          <span>#{writeIndex}</span>
+        </div>
+        <div className="metric-item">
+          <span className="metric-label">SYSTEM STATE</span>
+          <span className={`status-badge ${status.cls}`}>{status.label}</span>
+        </div>
+      </div>
+    </header>
+  );
+};
+</file>
+
+<file path="src/web/src/components/LogStreamPanel.css">
+.log-panel {
+  flex: 1;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  backdrop-filter: blur(12px);
+  min-width: 0;
+}
+
+.log-container {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+}
+
+.post-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.post-card.trigger-card {
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.post-card.SINGULARITY_CATALYST { border-left-color: var(--color-critical); }
+.post-card.BOUNDARY_BREAKER { border-left-color: var(--color-perturbed); }
+.post-card.VORTICITY_CENTER { border-left-color: var(--color-accent); }
+
+.post-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.author-did {
+  color: var(--text-muted);
+}
+
+.role-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: bold;
+}
+
+.role-badge.SINGULARITY_CATALYST { background: rgba(239, 68, 68, 0.2); color: var(--color-critical); }
+.role-badge.BOUNDARY_BREAKER { background: rgba(245, 158, 11, 0.2); color: var(--color-perturbed); }
+.role-badge.VORTICITY_CENTER { background: rgba(56, 189, 248, 0.2); color: var(--color-accent); }
+
+.post-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-main);
+  word-break: break-word;
+}
+
+.post-footer-row {
+  display: flex;
+  gap: 16px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+</file>
+
+<file path="src/web/src/components/LogStreamPanel.tsx">
+import React from 'react';
+import { TriggerPost } from '../hooks/useAutopoieticStream';
+import './LogStreamPanel.css';
+
+interface Props {
+  posts: TriggerPost[];
+}
+
+export const LogStreamPanel: React.FC<Props> = ({ posts }) => {
+  return (
+    <main className="log-panel">
+      <div className="panel-section-title">CRITICAL TRIGGER PARTICLES & LOG STREAM ({posts.length})</div>
+      <div className="log-container">
+        {posts.length === 0 ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: '12px', padding: '12px' }}>
+            Listening for structural trigger particles and manifold disruption events...
+          </div>
+        ) : (
+          posts.map((post, idx) => (
+            <div key={`${post.slotIndex}-${idx}`} className={`post-card trigger-card ${post.structuralRole}`}>
+              <div className="post-header-row">
+                <span className="author-did">{post.authorDid}</span>
+                <span className={`role-badge ${post.structuralRole}`}>{post.structuralRole}</span>
+              </div>
+              <div className="post-text">{post.text}</div>
+              <div className="post-footer-row">
+                <span>Score: <strong style={{ color: 'var(--color-accent)' }}>{post.contributionScore.toFixed(4)}</strong></span>
+                <span>Local Ricci: <strong style={{ color: 'var(--color-accent)' }}>{post.localRicciCurvature.toFixed(4)}</strong></span>
+                <span>Slot: #{post.slotIndex}</span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </main>
+  );
+};
+</file>
+
+<file path="src/web/src/components/TelemetryPanel.css">
+.telemetry-panel {
+  width: 32%;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  backdrop-filter: blur(12px);
+  overflow-y: auto;
+}
+
+.panel-section-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 6px;
+}
+
+.pde-box {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent);
+}
+
+.gauge-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gauge-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gauge-label-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.gauge-bar-bg {
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.gauge-bar-fill {
+  height: 100%;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+</file>
+
+<file path="src/web/src/components/TelemetryPanel.tsx">
+import React, { useEffect, useRef } from 'react';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+import './TelemetryPanel.css';
+
+interface Props {
+  equation: string;
+  reLambdaMax: number;
+  meanRicci: number;
+  h1Persistence: number;
+  h2Persistence: number;
+  residual: number;
+}
+
+export const TelemetryPanel: React.FC<Props> = ({
+  equation,
+  reLambdaMax,
+  meanRicci,
+  h1Persistence,
+  h2Persistence,
+  residual
+}) => {
+  const katexRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (katexRef.current && equation) {
+      const latexEq = equation
+        .replaceAll('delu/delt =', '\\frac{\\partial \\mathbf{U}}{\\partial t} =')
+        .replaceAll('del^2u', '\\nabla^2 \\mathbf{U}');
+
+      katex.render(latexEq, katexRef.current, { throwOnError: false, displayMode: true });
+    }
+  }, [equation]);
+
+  const calcPercent = (val: number, min: number, max: number) => {
+    const clamped = Math.max(min, Math.min(max, val));
+    return ((clamped - min) / (max - min)) * 100;
+  };
+
+  return (
+    <aside className="telemetry-panel">
+      <div className="panel-section-title">IDENTIFIED GRAPH-PDE EQUATION</div>
+      <div className="pde-box">
+        {equation ? <div ref={katexRef} /> : <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Awaiting SINDy-PDE Identification...</span>}
+      </div>
+
+      <div className="panel-section-title">MANIFOLD & TOPOLOGY METRICS</div>
+      <div className="gauge-group">
+        <div className="gauge-item">
+          <div className="gauge-label-row">
+            <span>Re(λ_max) Spectral Stability</span>
+            <strong>{reLambdaMax.toFixed(4)}</strong>
+          </div>
+          <div className="gauge-bar-bg">
+            <div
+              className="gauge-bar-fill"
+              style={{
+                width: `${calcPercent(reLambdaMax, -0.5, 0.1)}%`,
+                backgroundColor: reLambdaMax > -0.05 ? 'var(--color-critical)' : 'var(--color-stable)'
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="gauge-item">
+          <div className="gauge-label-row">
+            <span>Mean Ricci Curvature (R_ij)</span>
+            <strong>{meanRicci.toFixed(4)}</strong>
+          </div>
+          <div className="gauge-bar-bg">
+            <div
+              className="gauge-bar-fill"
+              style={{
+                width: `${calcPercent(meanRicci, -1.0, 0.5)}%`,
+                backgroundColor: meanRicci < -0.3 ? 'var(--color-perturbed)' : 'var(--color-accent)'
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="gauge-item">
+          <div className="gauge-label-row">
+            <span>TDA H₁ Loop Persistence</span>
+            <strong>{h1Persistence.toFixed(4)}</strong>
+          </div>
+          <div className="gauge-bar-bg">
+            <div className="gauge-bar-fill" style={{ width: `${calcPercent(h1Persistence, 0, 1.0)}%`, backgroundColor: 'var(--color-accent)' }} />
+          </div>
+        </div>
+
+        <div className="gauge-item">
+          <div className="gauge-label-row">
+            <span>TDA H₂ Void Persistence</span>
+            <strong>{h2Persistence.toFixed(4)}</strong>
+          </div>
+          <div className="gauge-bar-bg">
+            <div className="gauge-bar-fill" style={{ width: `${calcPercent(h2Persistence, 0, 0.5)}%`, backgroundColor: 'var(--color-accent)' }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="panel-section-title">RESIDUAL & ERROR</div>
+      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+        PDE Residual Norm: <span style={{ color: 'var(--text-main)' }}>{residual.toFixed(6)}</span>
+      </div>
+    </aside>
+  );
+};
+</file>
+
+<file path="src/web/src/hooks/useAutopoieticStream.ts">
+import { useEffect, useState } from 'react';
+
+export interface TriggerPost {
+  slotIndex: number;
+  uri: string;
+  authorDid: string;
+  text: string;
+  contributionScore: number;
+  localRicciCurvature: number;
+  structuralRole: string;
+}
+
+export interface TelemetryEvent {
+  writeIndex?: number;
+  stateFlags: number;
+  reLambdaMax: number;
+  meanRicciCurvature: number;
+  tdaH1Persistence: number;
+  tdaH2Persistence: number;
+  residual: number;
+  equation?: string;
+}
+
+export const useAutopoieticStream = () => {
+  const [connected, setConnected] = useState(false);
+  const [event, setEvent] = useState<TelemetryEvent | null>(null);
+  const [triggerPosts, setTriggerPosts] = useState<TriggerPost[]>([]);
+
+  useEffect(() => {
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.hostname}:5000/ws/topology`;
+    const socket = new WebSocket(wsUrl);
+
+    socket.onopen = () => setConnected(true);
+    socket.onclose = () => setConnected(false);
+    socket.onerror = () => setConnected(false);
+
+		socket.onmessage = (msg) => {
+			try {
+				const data = JSON.parse(msg.data);
+				const m = data.metrics || data.Metrics;
+				if (m) {
+					setEvent({
+						writeIndex: data.spectrumId ?? data.SpectrumId,
+						stateFlags: m.stateFlags ?? m.StateFlags ?? 0,
+						reLambdaMax: m.reLambdaMax ?? m.ReLambdaMax ?? -0.45,
+						meanRicciCurvature: m.meanRicciCurvature ?? m.MeanRicciCurvature ?? 0,
+						tdaH1Persistence: m.tdaH1Persistence ?? m.TdaH1Persistence ?? 0,
+						tdaH2Persistence: m.tdaH2Persistence ?? m.TdaH2Persistence ?? 0,
+						residual: m.sindyResidual ?? m.SindyResidual ?? 0,
+						equation: m.equation ?? m.Equation ?? '',
+					});
+				}
+				const posts = data.triggerPosts || data.TriggerPosts;
+				if (posts && Array.isArray(posts)) {
+					setTriggerPosts((prev) => [...posts, ...prev].slice(0, 50));
+				}
+			} catch (e) {
+				console.error('[WebSocket Parse Error]', e);
+			}
+		};
+    return () => socket.close();
+  }, []);
+
+  return { connected, event, triggerPosts };
+};
+</file>
+
+<file path="src/web/src/App.css">
+:root {
+  --bg-color: #050811;
+  --panel-bg: rgba(10, 15, 28, 0.85);
+  --border-color: #1e293b;
+  --text-main: #f8fafc;
+  --text-muted: #64748b;
+  
+  /* State Colors */
+  --color-stable: #10b981;     /* Emerald Green */
+  --color-perturbed: #f59e0b;  /* Amber/Yellow */
+  --color-critical: #ef4444;   /* Crimson Red */
+  --color-accent: #38bdf8;     /* Cyber Cyan */
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  font-family: 'JetBrains Mono', 'Fira Code', 'Segoe UI', monospace;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  padding: 12px;
+  gap: 12px;
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  gap: 12px;
+  min-height: 0;
+}
+</file>
+
+<file path="src/web/src/App.tsx">
+import React from 'react';
+import { useAutopoieticStream } from './hooks/useAutopoieticStream';
+import { HeaderHud } from './components/HeaderHud';
+import { TelemetryPanel } from './components/TelemetryPanel';
+import { LogStreamPanel } from './components/LogStreamPanel';
+import './App.css';
+
+export const App: React.FC = () => {
+  const { event, triggerPosts, connected } = useAutopoieticStream();
+
+  return (
+    <div className="app-container">
+      <HeaderHud
+        connected={connected}
+        stateFlags={event?.stateFlags ?? 0}
+        reLambdaMax={event?.reLambdaMax ?? -0.45}
+        writeIndex={event?.writeIndex ?? 0}
+      />
+      <div className="main-content">
+        <TelemetryPanel
+          equation={event?.equation ?? ''}
+          reLambdaMax={event?.reLambdaMax ?? -0.45}
+          meanRicci={event?.meanRicciCurvature ?? 0}
+          h1Persistence={event?.tdaH1Persistence ?? 0}
+          h2Persistence={event?.tdaH2Persistence ?? 0}
+          residual={event?.residual ?? 0}
+        />
+        <LogStreamPanel posts={triggerPosts} />
+      </div>
+    </div>
+  );
+};
+
+export default App;
+</file>
+
+<file path="src/web/src/index.tsx">
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+
+const rootEl = document.getElementById('root');
+if (rootEl) {
+  const root = ReactDOM.createRoot(rootEl);
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+}
+</file>
+
+<file path="src/web/package.json">
+{
+  "name": "web",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "rsbuild dev",
+    "build": "rsbuild build",
+    "preview": "rsbuild preview"
+  },
+  "dependencies": {
+    "katex": "^0.16.11",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "^1.0.0",
+    "@rsbuild/plugin-react": "^1.0.0",
+    "@types/katex": "^0.16.7",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.5.3"
+  }
+}
+</file>
+
+<file path="src/web/rsbuild.config.ts">
+import { defineConfig } from '@rsbuild/core';
+import { pluginReact } from '@rsbuild/plugin-react';
+
+export default defineConfig({
+  plugins: [pluginReact()],
+  html: {
+    title: 'REVELATIO II // Autopoietic Telemetry Control',
+  },
+});
+</file>
+
+<file path="tests/test_shm.c">
+/**
+ * @file test_shm.c
+ * @brief REVELATIO II Cytoplasm IV Shared Memory Attach & Sanity Test
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <errno.h>
+#include <inttypes.h>
+#include "../include/cytoplasm_v4.h"
+
+int main(void) {
+	printf("=== REVELATIO II // Cytoplasm IV Shared Memory Vrification ===\n\n");
+
+	/* 1. Compile-Time & Runtime Layout Checks */
+	printf("[1] Checking Structure Offsets & Memory Sized...\n");
+	printf("  - Size of HeaderSection: %zu B\n", sizeof(HeaderSection));
+	printf("  - Size of TensorCoefficientSection: %zu B\n", sizeof(TensorCoefficientSection));
+	printf("  - Size of ParticleOutputArea: %zu B\n", sizeof(ParticleOutputArea));
+	printf("  - Size of AdjacencyMatrixSection: %zu B\n", sizeof(AdjacencyMatrixSection));
+	printf("  - Size of VectorSlot: %zu B\n", sizeof(VectorSlot));
+	printf("  - Size of TextSlot: %zu B\n", sizeof(TextSlot));
+	printf("  - Total CytoplasmV4 Size: %zu B (%.2f MB)\n\n",
+			sizeof(CytoplasmV4), (double)sizeof(CytoplasmV4) / (1024.0 * 1024.0));
+
+	printf("  - Offset of header: 0x%08ZX\n", offsetof(CytoplasmV4, header));
+	printf("  - Offset of coefficients: 0x%08ZX\n", offsetof(CytoplasmV4, coefficients));
+	printf("  - Offset of particles_output: 0x%08ZX\n", offsetof(CytoplasmV4, particles_output));
+	printf("  - Offset of adjacency_matrix: 0x%08ZX (Target: 0x00004000)\n", offsetof(CytoplasmV4, adjacency_matrix));
+	printf("  - Offset of vectors: 0x%08ZX\n", offsetof(CytoplasmV4, vectors));
+	printf("  - Offset of text_lru: 0x%08ZX\n\n", offsetof(CytoplasmV4, text_lru));
+
+	if (offsetof(CytoplasmV4, adjacency_matrix) != 0x4000) {
+		fprintf(stderr, "[FATAL ERROR] Adjacency matrix offset mismatch! Expected 0x4000.\n");
+		return EXIT_FAILURE;
+	}
+
+	/* 2. Attach or Create Shared Memory */
+	printf("[2] Attaching to System V Shared Memory (Key: 0x%08X, Size: 512MB)...\n", CYTOPLASM_V4_IPC_KEY);
+	
+	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY, sizeof(CytoplasmV4), IPC_CREAT | 0666);
+	if (shmid < 0) {	
+		perror("  [ERROR] shmget failed");
+		return EXIT_FAILURE;
+	}
+	printf("  - shmget SUCCESS: shmid = %d\n", shmid);
+
+	void *shm_ptr = shmat(shmid, NULL, 0);
+	if (shm_ptr == (void *)-1) {
+		perror("  [ERROR] shmat failed");
+		return EXIT_FAILURE;
+	}
+	printf("  - shmat SUCCESS: Attachied at virtual address %p\n\n", shm_ptr);
+
+	CytoplasmV4 *cytoplasm = (CytoplasmV4 *)shm_ptr;
+
+	/* 3. Initialize or Validate Header */
+	printf("[3] Validating Header Magic Number...\n");
+	if (cytoplasm->header.magic_number != 0x4150455052455634ULL) {
+		printf("  - Uninitialized Shared Memory segment detected. Initializing Header...\n");
+		cytoplasm->header.magic_number = 0x4150455052455634ULL; /* "APEPREV4" */
+		cytoplasm->header.write_index = 0;
+		cytoplasm->header.read_index = 0;
+		cytoplasm->header.re_lambda_max = -0.45;
+		cytoplasm->header.mean_ricci_curvature = 0.0;
+		cytoplasm->header.state_flags = STATE_FLAG_STABLE;
+		cytoplasm->header.active_node_count = 0;
+		cytoplasm->header.last_updated_epoch_ns = 0;
+		printf("  - Header Initialized: Magic = 0x%" PRIX64 " [APEPREV4]\n", cytoplasm->header.magic_number);
+	} else {
+		printf("  - Existing Shared Memory Segment Verified: Magic = 0x%" PRIX64 " [APEPREV4]\n", cytoplasm->header.magic_number);
+	}
+
+	/* 4. Execute Read/Write Sanity Tests */
+	printf("\n[4] Executing Read/Write Sanity Tests...\n");
+	cytoplasm->header.write_index++;
+	uint64_t current_widx = cytoplasm->header.write_index;
+
+	/* Test Vector Ring Buffer Write */
+	uint32_t v_slot_idx = (uint32_t)(current_widx % VECTOR_RING_CAPACITY);
+	cytoplasm->vectors[v_slot_idx].slot_id = current_widx;
+	cytoplasm->vectors[v_slot_idx].timestamp_ns = 1700000000000000000ULL;
+	cytoplasm->vectors[v_slot_idx].values[0] = 1.2345f;
+	cytoplasm->vectors[v_slot_idx].values[127] = -9.8765f;
+
+	printf("  - Vector Ring Slot [%u] Write OK (Slot ID: %"PRIu64 ", Val[0]: %.4f, Val[127]: %.4f)\n",
+			v_slot_idx, cytoplasm->vectors[v_slot_idx].slot_id,
+			cytoplasm->vectors[v_slot_idx].values[0], cytoplasm->vectors[v_slot_idx].values[127]);
+
+	/* Test Text LRU Buffer Write */
+	uint32_t t_slot_idx = (uint32_t)(current_widx % TEXT_LRU_CAPACITY);
+	cytoplasm->text_lru[t_slot_idx].slot_id = current_widx;
+	snprintf(cytoplasm->text_lru[t_slot_idx].uri, TEXT_URI_MAX_LEN, "at://did:plc:revelatio2/app.bsky.feed.post/test001");
+	snprintf(cytoplasm->text_lru[t_slot_idx].author_did, TEXT_AUTHOR_MAX_LEN, "did:plc:revelatio2");
+	snprintf(cytoplasm->text_lru[t_slot_idx].text, TEXT_BODY_MAX_LEN, "REVELATIO II Cytoplasm IV SHM Test Post");
+	cytoplasm->text_lru[t_slot_idx].structural_role = ROLE_SINGULARITY_CATALYST;
+
+	printf("  - Text LRU Slot [%u] Write OK (URI: %s, Role: 0x%02X)\n",
+			t_slot_idx, cytoplasm->text_lru[t_slot_idx].uri, cytoplasm->text_lru[t_slot_idx].structural_role);
+
+	/* Test Adjacency Matrix Write */
+	cytoplasm->adjacency_matrix.weights[0][1] = 0.85f;
+	printf("  - Adjacency Matrix Weight [0][1] Write OK (Weight: %.2f)\n", cytoplasm->adjacency_matrix.weights[0][1]);
+
+	/* 5. Detach */
+	printf("\n[5] Detaching Shared Memory...\n");
+	if (shmdt(shm_ptr) < 0) {
+		perror("  [ERROR] shmdt failed");
+		return EXIT_FAILURE;
+	}
+	printf("  - shmdt SUCCESS. Shared Memory Verification Passed Cleanly!\n\n");
+	printf("=== ALL CHECKS PASSED ===\n");
+
+	return EXIT_SUCCESS;
+}
+</file>
+
+<file path="ARCHITECUTURE.md">
+# REVELATIO II : System Engineering & Mathematical Specification
+### Dual-Layer Tensor-Field & Graph-PDE Autopoietic Sensing Engine
+#### Document Version: 2.0.0-APEP
+
+---
+
+## 1. System Architecture & Mathematical Foundations
+
+REVELATIO II は、REVELATIO I におけるスカラー還元（$u(t) = \|\mathbf{v}(t)\|_2$）および擬似 1 次元格子の限界を完全突破し、**128次元特徴量テンソル場（Macro-Continuum）** と **Bluesky の動的グラフトポロジー（Micro-Interactions）** を直接結合した「グラフ偏微分方程式（Graph Reaction-Diffusion PDE）」および「リッチフロー多様体幾何学（Ricci Flow Manifold Geometry）」に基づく次世代オートポイエーティックセンシングエンジンである。
+
+```
+[Bluesky Jetstream API] 
+       │
+       ▼
+[Phase 1: Go Ingester] ──(128D N-Gram & Graph Topology)──► [Shared Memory: Cytoplasm IV (512MB)]
+                                                                  │      ▲
+       ┌──────────────────────────────────────────────────────────┘      │ (New Coefficients)
+       │                                                                 │
+       ├──► [Phase 2A: R Analytics Kernel] ◄──(IPC Trigger)──────────────┤
+       │    (TDA H₁/H₂ Persistence, Graph Laplacian L(t), Ricci Curvature)│
+       │                                                                 │
+       ├──► [Phase 2B: Julia Compute Engine] ────────────────────────────┘
+       │    (Vector/Graph SINDy-PDE Sparse Regression)
+       │
+       ▼
+[Phase 3: .NET Gateway Service]
+       │
+       ├─► [MariaDB Event Archive] (Longitudinal Structural Memory)
+       │
+       ▼ (WebSocket Broadcast)
+[Phase 4: WebGL / React WebUI] (128D Manifold Deformable HUD)
+```
+
+### [System State Machine]
+*   **STABLE** : $\text{Re}(\lambda_{\max}) \le -0.40$ かつ 局所平均曲率 $\bar{R} \ge 0$  
+    $\rightarrow$ 128次元多様体上の調和的な回転・流動。通常ストリーム連続インジェクション。
+*   **QUIET** : $-0.40 < \text{Re}(\lambda_{\max}) < -0.30$  
+    $\rightarrow$ 局所多様体の微小振動。グラフトポロジーの近傍バッファ再構築。
+*   **PERTURBED** : $-0.30 \le \text{Re}(\lambda_{\max}) < -0.05$ または 曲率歪み $|R_{ij}| > 1.2$  
+    $\rightarrow$ エメラルドグリーンの流体脈動と変形。言論の過熱・偏向現象。起爆粒子（触媒ポスト）抽出アクティブ。
+*   **CRITICAL** : $\text{Re}(\lambda_{\max}) \ge -0.05$ または 限界界面断絶（$H_1 / H_2$ 永続ホモロジー破綻）  
+    $\rightarrow$ クリムゾンレッドの相転移（特異点スパイク発生）。限界界面穿孔ポストおよび特異点起爆ポストの 3D アンカーポップアップ表示。MariaDB への非破壊高圧縮アーカイビング発動。
+
+### [Macro-Tensor Mathematical Equations]
+
+1.  **グラフ反応拡散系偏微分方程式 (Graph Reaction-Diffusion PDE - Julia Engine)**:
+    $N$ 個の動的ノード上の 128 次元特徴量状態行列 $\mathbf{U}(t) \in \mathbb{R}^{N \times 128}$ に対する運動方程式：
+    $$\frac{\partial \mathbf{U}}{\partial t} = \mathbf{F}(\mathbf{U}) - \mathbf{D} \cdot (L(t) \otimes I_{128}) \mathbf{U}$$
+    *   $\mathbf{F}(\mathbf{U}) = \mathbf{C}_1 \mathbf{U} + \mathbf{C}_2 (\mathbf{U} \circ \mathbf{U})$ : SINDy により同定される非線形自己増幅・相互作用項
+    *   $L(t) = D(t) - A(t)$ : Bluesky のインタラクション（リポスト・引用・返信）から生成される動的グラフ・ラプラシアン
+    *   $\mathbf{D} \in \mathbb{R}^{128 \times 128}$ : 特徴量次元間の異方性拡散テンソル
+
+2.  **多様体計量とリッチフロー歪み (Ricci Curvature & Metric Tensor - R Engine)**:
+    128次元潜在空間におけるデータ密度の局所不均一性から計量テンソル $g_{ij}$ を算出。空間の変形速度をリッチフロー方程式で記述：
+    $$\frac{\partial g_{ij}}{\partial t} = -2 R_{ij}$$
+    *   局所曲率 $R_{ij} < 0$ の急増は、特定の価値観・語彙への言論の急激な収縮（ブラックホール化・エコーチェンバーの巨大化）を幾何学的に判定する。
+
+3.  **クロネッカー積固有スペクトルと相転移判定 (R Engine)**:
+    結合ラプラシアン $\mathcal{L} = L(t) \otimes \Sigma_{\text{feature}}$ の最大固有値実部 $\text{Re}(\lambda_{\max})$ を算出。$\text{Re}(\lambda_{\max}) \ge -0.05$ の跳躍をもって、言論空間全体の構造的相転移（限界界面の崩壊）と定義する。
+
+### [Micro-Particle Attribution Formula]
+
+相転移または曲率特異点検出時における「起爆粒子（つぶやき）」の寄与スコア $S_i$ の算定：
+$$S_i = \left\| \mathbf{v}_{\max}(i) \right\|^2 \cdot \left\| \nabla_{\mathbf{U}_i} \mathcal{R}_{\text{SINDy}} \right\|_F \cdot (1 + |R_{i}|)$$
+*   $\mathbf{v}_{\max}(i)$ : 最大固有値 $\lambda_{\max}$ に対応する固有ベクトルの第 $i$ ノード成分
+*   $\nabla_{\mathbf{U}_i} \mathcal{R}_{\text{SINDy}}$ : SINDy 残差に対するノード $i$ の感度行列（フロベニウスノルム）
+*   $R_i$ : ノード $i$ 周辺の局所リッチ曲率
+*   **逆射影**: スコア $S_i$ 上位のノードインデックスを、共有メモリ内の `Text LRU Buffer` の物理スロットへマッピングしてテキスト情報を即時抽出する。
+
+---
+
+## 2. Shared Memory Specification (Cytoplasm IV : Key 0x41504550)
+
+*   **Total Footprint**: 512 MB (Linux System V Shared Memory)
+*   **IPC Key**: `0x41504550` ("APEP")
+
+### [Memory Layout Map]
+
+| Address Range | Section Name | Size | Structure & Content |
+| :--- | :--- | :--- | :--- |
+| `0x00000000 - 0x00000100` | Header Section | 256 B | アトミックインデックス, $\text{Re}(\lambda_{\max})$, 曲率指標 $\bar{R}$, ステートフラグ, タイムスタンプ |
+| `0x00000100 - 0x00000500` | Tensor Coefficients | 1,024 B | 128D SINDy 係数テンソル ($\mathbf{C}_1, \mathbf{C}_2$), 拡散テンソル $\mathbf{D}$, 残差 |
+| `0x00000500 - 0x00004000` | Particle Output Area | 15,104 B | 抽出トリガーポスト (最大 64 件) のスロット ID, 寄与スコア $S_i$, 局所曲率, 構造的役割フラグ |
+| `0x00004000 - 0x00044000` | Adjacency Matrix | 262,144 B | 近傍グラフの動的隣接行列 $A(t)$ (256×256 Float32 Dense Buffer) |
+| `0x00044000 - 0x0C044000` | Vector Ring Buffer | 192 MB | 128D 特徴量ベクトルリングバッファ (容量: 262,144 スロット, 各 768 B [ID, TS, Float32[128]]) |
+| `0x0C044000 - 0x20000000` | Text LRU Buffer | 320 MB | テキストメタデータ LRU スロット (容量: 16,384 スロット, 各 20.48 KB [URI, Author, Text, GraphMeta]) |
+
+---
+
+## 3. End-to-End Implementation Workflow by Layer
+
+### Phase 1: Go Ingester & Graph Topology Extractor
+1.  `bluesky_ingest.go` において Jetstream の `app.bsky.feed.post` をリアルタイム受信。
+2.  テキストから 128 次元 n-gram ハッシュ射影ベクトル $\mathbf{v}_t$ を生成し、`Vector Ring Buffer` へアトミック書き込み。
+3.  同時に、`reply`, `quote`, `mention` 情報を抽出し、共有メモリ内の `Adjacency Matrix` 領域上の対応するノード間の結合強度 $A_{ij}$ を動的に更新。
+4.  テキスト本文、URI、DID を `Text LRU Buffer` へマルチバイト UTF-8 安全に書き込み。
+
+### Phase 2: R & Julia Dual-Engine (Graph SINDy-PDE & Ricci Geometry)
+1.  **[R Engine]**:
+    *   `Vector Ring Buffer` および `Adjacency Matrix` から最新窓（例: 256ステップ）のテンソル場を取得。
+    *   持続ホモロジー $H_1, H_2$ を計算。構造破綻（TDA Disruption）検知時に Julia へ IPC シグナル送信。
+    *   局所計量 $g_{ij}$ からリッチ曲率 $R_{ij}$ を算出。
+2.  **[Julia Engine]**:
+    *   TDA シグナル受信時、128次元状態行列 $\mathbf{U}(t)$ に対する **Vector/Graph SINDy-PDE** スパース回帰を実行。
+    *   非線形相互作用テンソル $\mathbf{C}_1, \mathbf{C}_2$ および拡散テンソル $\mathbf{D}$ を同定し、共有メモリの `Tensor Coefficients` へ送り返す。
+3.  **[R Engine (Spectral Feedback)]**:
+    *   同定されたテンソル係数を用いて結合ラプラシアン $\mathcal{L}$ を再構築し、$\text{Re}(\lambda_{\max})$ を更新。
+    *   $\text{Re}(\lambda_{\max}) \ge -0.30$ または $|R_{ij}| > 1.2$ の場合、粒子寄与スコア $S_i$ を全ノードで計算。
+    *   上位 64 件の起爆スロットインデックスおよび役割分類（特異点起爆 / 界面穿孔 / 渦中心）を `Particle Output Area` に書き込む。
+
+### Phase 3: .NET Gateway Service & MariaDB Event Archive
+1.  `CytoplasmReader.cs` が 共有メモリの `Particle Output Area` をゼロコピーで高速極小ポーリング。
+2.  臨界イベント発祥時、抽出されたスロットインデックスに基づき `Text LRU Buffer` からポスト詳細を取得。
+3.  **MariaDB への非同期永続化**:
+    *   `spectrum_history_v2`: タイムスタンプ、$\text{Re}(\lambda_{\max})$、平均リッチ曲率 $\bar{R}$、SINDy テンソル係数を保存。
+    *   `critical_trigger_posts_v2`: イベント ID、ポスト URI、著者 DID、本文、寄与スコア $S_i$、局所曲率 $R_i$、構造的役割分類を保存。
+4.  JSON ペイロードを構築し、WebSocket 経由でフロントエンドへブロードキャスト。
+
+### Phase 4: React / WebGL 128D Manifold Visualizer
+1.  `Three.js` / WebGL カスタムシェーダーにより、128次元多様体を主成分・曲率テンソルに基づき 3D 幾何学メッシュとしてレンダリング。
+2.  `Re(\lambda_{\max})` および 局所曲率 $R_{ij}$ に応じた動的マテリアル変化：
+    *   STABLE: 青い幾何学的球面。調和的回転。
+    *   PERTURBED: エメラルドグリーンの流体脈動と変形。
+    *   CRITICAL: クリムゾンレッドへの全相転移。曲率負の特異点に鋭利な幾何学スパイクを挺出。
+3.  **Holographic Card Overlay**: スパイク先端（特異点ノード）に追従する 3D アンカーカードを描画し、構造的起爆ポストの著者、本文、寄与スコア $S_i$、および「界面穿孔ポスト」「特異点起爆ポスト」のラベルをリアルタイム表示。
+
+---
+
+## 4. Database Schema (MariaDB)
+
+```sql
+CREATE DATABASE IF NOT EXISTS revelatio_db
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_unicode_ci;
+
+USE revelatio_db;
+
+-- マクロ・システム状態および多様体曲率履歴
+CREATE TABLE IF NOT EXISTS spectrum_history_v2 (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    calculated_at_ns BIGINT NOT NULL,
+    re_lambda_max DOUBLE NOT NULL,
+    mean_ricci_curvature DOUBLE NOT NULL,
+    tda_h1_persistence DOUBLE NOT NULL,
+    tda_h2_persistence DOUBLE NOT NULL,
+    sindy_residual DOUBLE NOT NULL,
+    state_flags INT UNSIGNED NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_calculated_at (calculated_at_ns),
+    INDEX idx_re_lambda (re_lambda_max)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 微視的・構造的起爆粒子（つぶやき）ログ
+CREATE TABLE IF NOT EXISTS critical_trigger_posts_v2 (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    spectrum_id BIGINT NOT NULL,
+    slot_index INT UNSIGNED NOT NULL,
+    post_uri VARCHAR(256) NOT NULL,
+    author_did VARCHAR(128) NOT NULL,
+    post_text TEXT NOT NULL,
+    contribution_score DOUBLE NOT NULL,
+    local_ricci_curvature DOUBLE NOT NULL,
+    structural_role ENUM('SINGULARITY_CATALYST', 'BOUNDARY_BREAKER', 'VORTICITY_CENTER') NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (spectrum_id) REFERENCES spectrum_history_v2(id) ON DELETE CASCADE,
+    INDEX idx_uri (post_uri),
+    INDEX idx_author (author_did),
+    INDEX idx_role (structural_role)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+---
+
+## 5. Verification & Validation Protocol
+
+1.  **高次元アドバーサリアル・バーストテスト**:
+    *   Bluesky インジェスターに対し、異種対立的な意味論ベクトルを持つ 1,000 件の疑似ポスト群（限界界面穿孔データ）を 10ms 以内に人工注入する。
+2.  **多様体曲率・SINDy 応答検証**:
+    *   R エンジンが局所負曲率の不連続な増加（$R_{ij} < -2.0$）を検知し、Julia の Vector SINDy-PDE が非線形相互作用項 $\mathbf{C}_2$ の非ゼロ同定を 200ms 以内に達成することを確認。
+3.  **起爆粒子抽出精度テスト**:
+    *   注入された疑似ポスト群の中から、幾何学的歪みを引き起こした正確な触媒ポスト URI が `Particle Output Area` 経由で .NET Gateway にて抽出され、MariaDB に正確な `structural_role` 分類とともに 15ms 以内に保存されることを検証。
+4.  **WebGL レンダリング & アンカー追従検証**:
+    *   WebUI 上でメッシュが赤色スパイク形状に変形し、抽出された起爆ポストが 3D 空間上の特異点座標に正確にバインドされてホログラフィック表示されることを確認する。
+</file>
+
+<file path="go.mod">
+module github.com/TakaoTachibana/revelatio-ii
+
+go 1.26.5
+
+require github.com/gorilla/websocket v1.5.3
+</file>
+
+<file path="README.md">
+# REVELATIO II
+> **Dual-Layer Tensor-Field & Graph-PDE Autopoietic Sensing Engine**
+
+REVELATIO II は、Bluesky のリアルタイムストリームを 128 次元特徴量テンソル場および動的グラフトポロジーとして直接マッピングし、**グラフ偏微分方程式（Graph Reaction-Diffusion PDE）** と **リッチフロー多様体幾何学（Ricci Flow Manifold Geometry）** に基づいて言語空間の相転移・言論の極化・構造的起爆ポストをリアルタイムに解剖・抽出するオートポイエーティックセンシングエンジンです。
+
+---
+
+## 🛠 システム構成
+
+- **Go Ingester**: Jetstream API 受信、128D n-gram ハッシュ射影、動的隣接行列抽出
+- **Cytoplasm IV**: 512MB System V 共有メモリ (`Key: 0x41504550`)
+- **Julia Engine**: Vector / Graph SINDy-PDE スパース回帰 (反応拡散項の自律同定)
+- **R Analytics Kernel**: TDA ($H_1/H_2$ 永続ホモロジー)、リッチ曲率 $R_{ij}$、クロネッカー固有スペクトル
+- **.NET Gateway Service**: 共有メモリのゼロコピーリード、WebSocket ブロードキャスト、MariaDB アーカイビング
+- **WebGL / React WebUI**: 128D 多様体変形メッシュ、特異点アンカー型ホログラフィック 3D HUD
+
+---
+
+## 📖 仕様書
+
+詳細なシステム構成、数式、共有メモリ領域マップについては [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) を参照してください。
+</file>
+
+<file path="src/gateway/GatewayService/Program.cs">
+using System.Collections.Concurrent;
+using System.Net.WebSockets;
+using System.Text;
+using System.Text.Json;
+
+using Dapper;
+
+using GatewayService.Services;
+
+using MySqlConnector;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddSingleton<CytoplasmV4Reader>();
+
+var app = builder.Build();
+
+app.UseWebSockets();
+
+var wsClients = new ConcurrentBag<WebSocket>();
+
+app.MapPost("/api/v1/topology/event", async (TopologyEventRequest request, CytoplasmV4Reader reader, IConfiguration config ) => {
+	string dbConnStr = config.GetConnectionString("MariaDB")
+	?? "Server=localhost;Database=revelatio_db;Uid=root;Pwd=password;";
+
+	var triggerPosts = reader.ReadTopTriggerPosts();
+
+	long spectrumId = 0;
+	
+	await using (var conn = new MySqlConnection(dbConnStr)) {
+		await conn.OpenAsync();
+		await using var tx = await conn.BeginTransactionAsync();
+
+		try {
+			const string sqlSpectrum = @"
+				INSERT INTO spectrum_history_v2
+				(calculated_at_ns, re_lambda_max, mean_ricci_curvature, tda_h1_persistence, tda_h2_persistence, sindy_residual, state_flags)
+				VALUES (@CalculatedAtNs, @ReLambdaMax, @MeanRicciCurvature, @TdaH1Persistence, @TdaH2Persistence, @SindyResidual, @StateFlags);
+				SELECT LAST_INSERT_ID()";
+
+			spectrumId = await conn.ExecuteScalarAsync<long>(sqlSpectrum, new {
+				CalculatedAtNs = request.CalculatedAtNs,
+				ReLambdaMax = request.ReLambdaMax,
+				MeanRicciCurvature = request.MeanRicciCurvature,
+				TdaH1Persistence = request.TdaH1Persistence,
+				TdaH2Persistence = request.TdaH2Persistence,
+				SindyResidual = request.SindyResidual,
+				StateFlags = request.StateFlags
+			}, tx);
+
+			if (triggerPosts.Count > 0) {
+				const string sqlPosts = @"
+					INSERT INTO critical_trigger_posts_v2
+					(spectrum_id, slot_index, post_uri, author_did, post_text, contribution_score, local_ricci_curvature, structural_role)
+					VALUES (@SpectrumId, @SlotIndex, @Uri, @AuthorDid, @Text, @ContributionScore, @LocalRicciCurvature, @StructuralRole);";
+
+				var postEntities = triggerPosts.Select(p => new {
+					SpectrumId = spectrumId,
+					SlotIndex = p.SlotIndex,
+					Uri = p.Uri,
+					AuthorDid = p.AuthorDid,
+					Text = p.Text,
+					ContributionScore = p.ContributionScore,
+					LocalRicciCurvature = p.LocalRicciCurvature,
+					StructuralRole = p.StructuralRole
+				});
+
+				await conn.ExecuteAsync(sqlPosts, postEntities, tx);
+			}
+
+			await tx.CommitAsync();
+		} catch (Exception ex) {
+			await tx.RollbackAsync();
+			Console.WriteLine($"[DB Error Transaction failed: {ex.Message}");
+			return Results.Problem("Database persistence failed.", statusCode: 500);
+		}
+	}
+
+	var jsonOptions = new JsonSerializerOptions {
+		PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+	};
+
+	var payload = JsonSerializer.Serialize(new {
+		spectrumId,
+		metrics = request,
+		triggerPosts
+	});
+
+	byte[] bytes = Encoding.UTF8.GetBytes(payload);
+	var deadSockets = new List<WebSocket>();
+
+	foreach (var socket in wsClients) {
+		if (socket.State == WebSocketState.Open) {
+			_ = socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+		} else {
+			deadSockets.Add(socket);
+		}
+	}
+
+	foreach (var dead in deadSockets) {
+		wsClients.TryTake(out _);
+	}
+
+	return Results.Ok(new { status = "ACCEPTED", spectrumId, particleCount = triggerPosts.Count });
+});
+
+app.Map("/ws/topology", async (HttpContext context) => {
+	if (context.WebSockets.IsWebSocketRequest) {
+		using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+		wsClients.Add(webSocket);
+		Console.WriteLine($"[WebSocket] Client connected. Total active: {wsClients.Count}");
+		
+		var buffer = new byte[1024];
+		while (webSocket.State == WebSocketState.Open) {
+			var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+			if (result.MessageType == WebSocketMessageType.Close) {
+				break;
+			}
+		}
+
+		wsClients.TryTake(out _);
+		Console.WriteLine("[WebSocket] Client disconnected.");
+	} else {
+		context.Response.StatusCode = StatusCodes.Status400BadRequest;
+	}
+});
+
+app.Run();
+
+public record TopologyEventRequest (
+	long CalculatedAtNs,
+	double ReLambdaMax,
+	double MeanRicciCurvature,
+	double TdaH1Persistence,
+	double TdaH2Persistence,
+	double SindyResidual,
+	uint StateFlags,
+	string? Equation
+);
+</file>
+
 <file path="src/ingester/main.go">
 package main
 
@@ -588,182 +2348,6 @@ func main() {
 }
 </file>
 
-<file path="src/ingester/shared_memory.c">
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include "../../include/cytoplasm_v4.h"
-
-CytoplasmV4* cytoplasm_v4_attach(int *shmid_out) {
-	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY, sizeof(CytoplasmV4), IPC_CREAT | 0666);
-	if (shmid < 0) {
-		perror("[Cytoplasm IV C-Error] shmget failed");
-		return NULL;
-	}
-
-	void *shm_ptr = shmat(shmid, NULL, 0);
-	if (shm_ptr == (void *)-1) {
-		perror("[Cytoplasm IV C-Error] shmat failed");
-		return NULL;
-	}
-
-	if (shmid_out != NULL) {
-		*shmid_out = shmid;
-	}
-
-	CytoplasmV4 *cytoplasm = (CytoplasmV4 *)shm_ptr;
-
-	if (cytoplasm->header.magic_number != 0x4150455052455634ULL) {
-		cytoplasm->header.magic_number = 0x4150455052455634ULL; /* "APERREV4" */
-		cytoplasm->header.re_lambda_max = -0.45;
-		cytoplasm->header.mean_ricci_curvature = 0.0;
-		cytoplasm->header.state_flags = STATE_FLAG_STABLE;
-		cytoplasm->header.write_index = 0;
-		cytoplasm->header.read_index = 0;
-		cytoplasm->header.active_node_count = 0;
-	}
-
-	return cytoplasm;
-}
-
-int cytoplasm_v4_detach(CytoplasmV4 *cytoplasm) {
-	if (cytoplasm == NULL) {
-		return -1;
-	}
-
-	return shmdt((void *)cytoplasm);
-}
-</file>
-
-<file path="src/ingester/shm_writer.go">
-package main
-
-/*
-#cgo CFLAGS: -I../../include
-#include "../../include/cytoplasm_v4.h"
-
-CytoplasmV4* cytoplasm_v4_attach(int *shmid_out);
-int cytoplasm_v4_detach(CytoplasmV4 *cytoplasm);
-*/
-import "C"
-
-import (
-	"fmt"
-	"sync"
-	"sync/atomic"
-	"time"
-	"unsafe"
-)
-
-type SharedMemoryWriter struct {
-	shmPtr *C.CytoplasmV4
-	shmID C.int
-	nodeMap map[string]int
-	nodeCount int
-	mu sync.Mutex
-}
-
-func NewSharedMemoryWriter() (*SharedMemoryWriter, error) {
-	var shmID C.int
-	ptr := C.cytoplasm_v4_attach(&shmID)
-	if ptr == nil {
-		return nil, fmt.Errorf("failed to attach to Cytoplasm IV 512MB shared memory")
-	}
-
-	return &SharedMemoryWriter {
-		shmPtr: ptr,
-		shmID: shmID,
-		nodeMap: make(map[string]int),
-	}, nil
-}
-
-func (w *SharedMemoryWriter) getOrAssignNodeIndex(did string) int {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if idx, exists := w.nodeMap[did]; exists {
-		return idx
-	}
-
-	if w.nodeCount < C.GRAPH_MAX_NODES {
-		idx := w.nodeCount
-		w.nodeMap[did] = idx
-		w.nodeCount++
-		atomic.StoreUint32((*uint32)(unsafe.Pointer(&w.shmPtr.header.active_node_count)), uint32(w.nodeCount))
-		return idx
-	}
-
-	hash := 0
-	for _, ch := range did {
-		hash = (hash * 31 + int(ch)) % C.GRAPH_MAX_NODES
-	}
-	return hash
-}
-
-func (w *SharedMemoryWriter) WritePost(uri, authorDID, text string, vector [128]float32, targetDID string) uint64 {
-	nowNs := uint64(time.Now().UnixNano())
-
-	// 1. Atomic Index Increment
-	writeIdx := atomic.AddUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.write_index)), 1) - 1
-
-	// 2. Vector Ring Buffer Write (~192MB Zone)
-	vSlotIdx := writeIdx % C.VECTOR_RING_CAPACITY
-	vSlot := &w.shmPtr.vectors[vSlotIdx]
-	vSlot.slot_id = C.uint64_t(writeIdx)
-	vSlot.timestamp_ns = C.uint64_t(nowNs)
-
-	for i := 0; i < C.VECTOR_DIM; i++ {
-		vSlot.values[i] = C.float(vector[i])
-	}
-
-	// 3. Text LRU Buffer Write (~320MB Zone)
-	tSlotIdx := writeIdx % C.TEXT_LRU_CAPACITY
-	tSlot := &w.shmPtr.text_lru[tSlotIdx]
-	tSlot.slot_id = C.uint64_t(writeIdx)
-	tSlot.timestamp_ns = C.uint64_t(nowNs)
-
-	copyCString(unsafe.Pointer(&tSlot.uri[0]), uri, C.TEXT_URI_MAX_LEN)
-	copyCString(unsafe.Pointer(&tSlot.author_did[0]), authorDID, C.TEXT_AUTHOR_MAX_LEN)
-	copyCString(unsafe.Pointer(&tSlot.text[0]), text, C.TEXT_BODY_MAX_LEN)
-
-	// 4. Graph Adjacency Matrix Update (Replay/Quote/Mention Interfaction Topology)
-	if targetDID != "" {
-		srcIdx := w.getOrAssignNodeIndex(authorDID)
-		dstIdx := w.getOrAssignNodeIndex(targetDID)
-
-		weightPtr := &w.shmPtr.adjacency_matrix.weights[srcIdx][dstIdx]
-		currentWeight := float32(*weightPtr)
-		newWeight := currentWeight * 0.95 + 1.0
-		if newWeight > 10.0 {
-			newWeight = 10.0
-		}
-		*weightPtr = C.float(newWeight)
-	}
-
-	atomic.StoreUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.last_updated_epoch_ns)), nowNs)
-
-	return writeIdx
-}
-
-func copyCString(dst unsafe.Pointer, src string, maxLen int) {
-	bytes := []byte(src)
-	if len(bytes) >= maxLen {
-		bytes = bytes[:maxLen - 1]
-	}
-	dstBuf := (*[1 << 30]byte)(dst)[:maxLen:maxLen]
-	copy(dstBuf, bytes)
-	dstBuf[len(bytes)] = 0
-}
-
-func (w *SharedMemoryWriter) Close() {
-	if w.shmPtr != nil {
-		C.cytoplasm_v4_detach(w.shmPtr)
-	}
-}
-</file>
-
 <file path="src/kernel/julia/main.jl">
 using Pkg
 
@@ -856,187 +2440,6 @@ end
 main()
 </file>
 
-<file path="src/kernel/julia/Manifest.toml">
-# This file is machine-generated - editing it directly is not advised
-
-julia_version = "1.12.6"
-manifest_format = "2.0"
-project_hash = "5de53b4e6860caf39f846bebd57682dbe9340e61"
-
-[[deps.Artifacts]]
-uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
-version = "1.11.0"
-
-[[deps.Base64]]
-uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
-version = "1.11.0"
-
-[[deps.CodecZlib]]
-deps = ["TranscodingStreams", "Zlib_jll"]
-git-tree-sha1 = "970758a3d591a2a5c2a907c53f2e2f8c1b1d3537"
-uuid = "944b1d66-785c-5afd-91f1-9de20f533193"
-version = "0.7.9"
-
-[[deps.CompilerSupportLibraries_jll]]
-deps = ["Artifacts", "Libdl"]
-uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
-version = "1.3.0+1"
-
-[[deps.Dates]]
-deps = ["Printf"]
-uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
-version = "1.11.0"
-
-[[deps.EnumX]]
-git-tree-sha1 = "c49898e8438c828577f04b92fc9368c388ac783c"
-uuid = "4e289a0a-7415-4d19-859d-a7e5c4648b56"
-version = "1.0.7"
-
-[[deps.HTTP]]
-deps = ["Base64", "CodecZlib", "Dates", "EnumX", "PrecompileTools", "Random", "Reseau", "SHA", "URIs", "UUIDs", "Zlib_jll"]
-git-tree-sha1 = "d6e390d1515836237b837fb7b6fca7ba1d752db6"
-uuid = "cd3eb016-35fb-5094-929b-558a96fad6f3"
-version = "2.6.5"
-
-[[deps.JSON3]]
-deps = ["Dates", "Mmap", "Parsers", "PrecompileTools", "StructTypes", "UUIDs"]
-git-tree-sha1 = "411eccfe8aba0814ffa0fdf4860913ed09c34975"
-uuid = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
-version = "1.14.3"
-
-    [deps.JSON3.extensions]
-    JSON3ArrowExt = ["ArrowTypes"]
-
-    [deps.JSON3.weakdeps]
-    ArrowTypes = "31f734f8-188a-4ce0-8406-c8a06bd891cd"
-
-[[deps.Libdl]]
-uuid = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
-version = "1.11.0"
-
-[[deps.LinearAlgebra]]
-deps = ["Libdl", "OpenBLAS_jll", "libblastrampoline_jll"]
-uuid = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
-version = "1.12.0"
-
-[[deps.Mmap]]
-uuid = "a63ad114-7e13-5084-954f-fe012c677804"
-version = "1.11.0"
-
-[[deps.NetworkOptions]]
-uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
-version = "1.3.0"
-
-[[deps.OpenBLAS_jll]]
-deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
-uuid = "4536629a-c528-5b80-bd46-f80d51c5b363"
-version = "0.3.29+0"
-
-[[deps.OpenSSL_jll]]
-deps = ["Artifacts", "Libdl"]
-uuid = "458c3c95-2e84-50aa-8efc-19380b2a3a95"
-version = "3.5.4+0"
-
-[[deps.Parsers]]
-deps = ["Dates", "PrecompileTools", "UUIDs"]
-git-tree-sha1 = "3de8f5e6e90ebfa8d6d1f86997d6cdcd6a912ff3"
-uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
-version = "2.8.7"
-
-[[deps.PrecompileTools]]
-deps = ["Preferences"]
-git-tree-sha1 = "edbeefc7a4889f528644251bdb5fc9ab5348bc2c"
-uuid = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
-version = "1.3.4"
-
-[[deps.Preferences]]
-deps = ["TOML"]
-git-tree-sha1 = "8b770b60760d4451834fe79dd483e318eee709c4"
-uuid = "21216c6a-2e73-6563-6e65-726566657250"
-version = "1.5.2"
-
-[[deps.Printf]]
-deps = ["Unicode"]
-uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
-version = "1.11.0"
-
-[[deps.Random]]
-deps = ["SHA"]
-uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
-version = "1.11.0"
-
-[[deps.Reseau]]
-deps = ["NetworkOptions", "OpenSSL_jll", "PrecompileTools", "Random", "SHA"]
-git-tree-sha1 = "ca7b7e19c33dd5dfae91369724d7edc198da29f5"
-uuid = "802f3686-a58f-41ce-bb0c-3c43c75bba36"
-version = "1.4.0"
-
-[[deps.SHA]]
-uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
-version = "0.7.0"
-
-[[deps.Statistics]]
-deps = ["LinearAlgebra"]
-git-tree-sha1 = "ae3bb1eb3bba077cd276bc5cfc337cc65c3075c0"
-uuid = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
-version = "1.11.1"
-
-    [deps.Statistics.extensions]
-    SparseArraysExt = ["SparseArrays"]
-
-    [deps.Statistics.weakdeps]
-    SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
-
-[[deps.StructTypes]]
-deps = ["Dates", "UUIDs"]
-git-tree-sha1 = "159331b30e94d7b11379037feeb9b690950cace8"
-uuid = "856f2bd8-1eba-4b0a-8007-ebc267875bd4"
-version = "1.11.0"
-
-[[deps.TOML]]
-deps = ["Dates"]
-uuid = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
-version = "1.0.3"
-
-[[deps.TranscodingStreams]]
-git-tree-sha1 = "0c45878dcfdcfa8480052b6ab162cdd138781742"
-uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
-version = "0.11.3"
-
-[[deps.URIs]]
-git-tree-sha1 = "908fec9df6c5de98548ead82a468c95ccf6cd263"
-uuid = "5c2747f8-b7ea-4ff2-ba2e-563bfd36b1d4"
-version = "1.7.0"
-
-[[deps.UUIDs]]
-deps = ["Random", "SHA"]
-uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
-version = "1.11.0"
-
-[[deps.Unicode]]
-uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
-version = "1.11.0"
-
-[[deps.Zlib_jll]]
-deps = ["Libdl"]
-uuid = "83775a58-1f1d-513f-b197-d71354ab007a"
-version = "1.3.1+2"
-
-[[deps.libblastrampoline_jll]]
-deps = ["Artifacts", "Libdl"]
-uuid = "8e850b90-86db-534c-a0d3-1478176c7d93"
-version = "5.15.0+0"
-</file>
-
-<file path="src/kernel/julia/Project.toml">
-[deps]
-HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
-JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
-LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
-Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
-Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
-</file>
-
 <file path="src/kernel/julia/shm_interface.jl">
 module SHMInterface
 
@@ -1073,8 +2476,8 @@ function read_header(ctx::SHMContext)
 	last_updated_epoch_ns = reinterpret(UInt64, raw_hdr[9:16])[1]
 	active_node_count = reinterpret(UInt32, raw_hdr[17:20])[1]
 	state_flags = reinterpret(UInt32, raw_hdr[21:24])[1]
-	mean_ricci = reinterpret(Float64, raw_hdr[25:32])[1]
-	re_lambda_max = reinterpret(Float64, raw_hdr[33:40])[1]
+	re_lambda_max = reinterpret(Float64, raw_hdr[25:32])[1]
+	mean_ricci = reinterpret(Float64, raw_hdr[33:40])[1]
 
 	return SHMHeader(write_index, last_updated_epoch_ns, active_node_count, state_flags, mean_ricci, re_lambda_max)
 end
@@ -1089,7 +2492,7 @@ function read_timeseries(ctx::SHMContext, time_steps::Int = 120)
 	return copy(out_matrix[:, 1:steps])
 end
 
-function write_sindy_coefficients_and_reset(cts::SHMContext, coeffs::Vector{Float64})
+function write_sindy_coefficients_and_reset(ctx::SHMContext, coeffs::Vector{Float64})
 	D = length(coeffs) >= 1 ? coeffs[1] : 0.0
 	lambda = length(coeffs) >= 2 ? coeffs[2] : 0.0
 	ccall((:julia_shm_write_sindy_coefficients, LIB_SHM_BRIDGE), Cvoid,
@@ -1109,6 +2512,7 @@ end # module
 #include <string.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <stddef.h>
 #include "cytoplasm_v4.h"
 
 static CytoplasmV4 *g_cytoplasm = NULL;
@@ -1123,6 +2527,10 @@ int julia_shm_attach(void) {
 	if (shm_ptr == (void *)-1) {
 		return -2;
 	}
+
+	printf("[DEBUG SHM] mean_ricci offset: %zu | re_lambda offset: %zu\n",
+			offsetof(HeaderSection, mean_ricci_curvature),
+			offsetof(HeaderSection, re_lambda_max));
 
 	g_cytoplasm = (CytoplasmV4 *)shm_ptr;
 	return 0;
@@ -1158,6 +2566,9 @@ void julia_shm_write_sindy_coefficients(double diffusion_D, double reaction_lamb
 	if (g_cytoplasm == NULL) {
 		return;
 	}
+
+	g_cytoplasm->header.re_lambda_max = reaction_lambda;
+
 	for (int d = 0; d < VECTOR_DIM; d++) {
 		g_cytoplasm->coefficients.diffusion_tensor[d] = diffusion_D;
 		g_cytoplasm->coefficients.c1_diag[d] = reaction_lambda;
@@ -1168,7 +2579,8 @@ void julia_shm_reset_tda_flag_and_mark_sindy(void) {
 	if (g_cytoplasm == NULL) {
 		return;
 	}
-	g_cytoplasm->header.state_flags &= ~((uint32_t)STATE_FLAG_TDA_DISRUPTION);
+	uint32_t clear_mask = (uint32_t)(STATE_FLAG_CRITICAL | STATE_FLAG_TDA_DISRUPTION | STATE_FLAG_PERTURBED);
+	g_cytoplasm->header.state_flags &= ~clear_mask;
 }
 
 void julia_shm_detach(void) {
@@ -1177,225 +2589,6 @@ void julia_shm_detach(void) {
 		g_cytoplasm = NULL;
 	}
 }
-</file>
-
-<file path="src/kernel/julia/sindy_pde.jl">
-module SINDyPDE
-
-using LinearAlgebra
-using Statistics
-using Printf
-
-struct SINDyResult
-	equation_str::String
-	coefficients::Vector{Float64}
-	residual::Float64
-end
-
-function fit_sindy_pde(U::Matrix{Float64})
-	dim, T = size(U)
-	if T < 10
-		return SINDyResult("delu/delt = 0", [0.0, 0.0, 0.0], 0.0)
-	end
-	dt = 0.1
-	dU_dt = (U[:, 2:end] .- U[:, 1:end - 1]) ./ dt
-	
-	Laplacian_U = zeros(Float64, dim, T - 1)
-	for t in 1:T - 1
-		u_t = U[:, t]
-		lap = circshift(u_t, 1) .+ circshift(u_t, -1) .- 2.0 .* u_t
-		Laplacian_U[:, t] = lap
-	end
-
-	u_vec = vec(U[:, 1:end - 1])
-	lap_vec = vec(Laplacian_U)
-	u_cubic_vec = u_vec .^ 3
-	du_vec = vec(dU_dt)
-
-	Theta = [lap_vec u_vec u_cubic_vec]
-	Xi = Theta \ du_vec
-
-	for iter in 1:3
-		small_inds = abs.(Xi) .< 0.01
-		Xi[small_inds] .= 0.0
-		for i in 1:size(Theta, 2)
-			if !small_inds[i]
-				Xi[i] = Theta[:, i] \ du_vec
-			end
-		end
-	end
-
-	D_coeff = Xi[1]
-	lambda_coeff = Xi[2]
-	cubic_coeff = Xi[3]
-
-	res_val = norm(Theta * Xi .- du_vec) / sqrt(length(du_vec))
-	eq_str = @sprintf("delu/delt = %.4fdel^2u + %.4fu %+.4fu^3", D_coeff, lambda_coeff, cubic_coeff)
-
-	return SINDyResult(eq_str, [D_coeff, lambda_coeff, cubic_coeff], res_val)
-end
-
-end # module
-</file>
-
-<file path="src/kernel/r/ricci_tda_kernel.R">
-# REVELATIO II Phase 2-A: R Analaytics Kernel
-# 128D Manifold Ricci Curvature & TDA Persistence Disruption Engine
-
-suppressPackageStartupMessages({
-	library(TDA)
-	library(igraph)
-	library(matrixStats)
-})
-
-# Load C Bridge
-dyn.load("shm_r_bridge.so")
-
-attach_shm <- function() {
-	res <- .C("r_shm_attach", status = integer(1))
-	if (res$status != 0) {
-		stop(paste("[R-Kernel FATAL] Cannot attach to Cytoplasm IV. Code:", res$status))
-	}
-	cat("[R-Kernel] Attached to Cytoplasm IV Shared Memory (512MB)\n")
-}
-
-read_vectors <- function(sample_count = 256) {
-	out_mat <- numeric(sample_count * 128)
-	out_ts <- numeric(sample_count)
-	res <- .C("r_shm_read_recent_vectors",
-						sample_count = as.integer(sample_count),
-						out_matrix = as.double(out_mat),
-						out_timestamps = as.double(out_ts))
-
-	mat <- matrix(res$out_matrix, nrow = sample_count, ncol = 128, byrow = TRUE)
-	return(list(matrix = mat, timestamps = res$out_timestamps))
-}
-
-read_adjacency <- function() {
-	out_adj <- numeric(256 * 256)
-	active_n <- integer(1)
-	res <- .C("r_shm_read_adjacency_matrix",
-						out_adj_256x256 = as.double(out_adj),
-						active_nodes = as.integer(active_n))
-
-	adj_mat <- matrix(res$out_adj_256x256, nrow = 256, ncol = 256, byrow = TRUE)
-	return(list(adj = adj_mat, active_nodes = res$active_nodes))
-
-}
-
-compute_forman_ricci <- function(adj_matrix, active_nodes) {
-	if (active_nodes < 3) {
-		return (0.0)
-	}
-
-	sub_adj <- adj_matrix[1:active_nodes, 1:active_nodes]
-	g <- graph_from_adjacency_matrix(sub_adj, mode = "undirected", weighted = TRUE)
-	deg <- degree(g)
-
-	edges <- get.edgelist(g)
-	if (nrow(edges) == 0) {
-		return (0.0)
-	}
-
-	ricci_sum <- 0
-	for (e in 1:nrow(edges)) {
-		u <- edges[e, 1]
-		v <- edges[e, 2]
-		w_uv <- E(g)$weight[e]
-		if (is.null(w_uv) || w_uv == 0) {
-			w_uv <- 1.0
-		}
-
-		# Forman-Ricci Curvature Formula for Weighted Graphs
-		r_e <- 4.0 - (deg[u] + deg[v])
-		ricci_sum <- ricci_sum + r_e
-	}
-
-	mean_ricci <- ricci_sum / nrow(edges)
-	return (mean_ricci)
-}
-
-compute_tda_persistence <- function(vec_matrix) {
-	clean_mat <- vec_matrix[!duplicated(vec_matrix), ]
-	if (nrow(clean_mat) < 15) {
-		return (list(h1 = 0.0, h2 = 0.0))
-	}
-
-	svd_res <- prcomp(clean_mat, rank. = 4, scale. = FALSE)
-	low_dim_mat <- svd_res$x
-
-	dist_max <- as.matrix(dist(low_dim_mat))
-	max_scale <- quantile(dist_max, 0.75)
-
-	if (max_scale <= 0) {
-		return (list(h1 = 0.0, h2 = 0.0))
-	}
-
-	Diag <- tryCatch({
-		ripsDiag(X = low_dim_mat, maxdimension = 2, maxscale = max_scale, library = "GUDHI")
-	}, error = function(e) {
-		return (NULL)
-	})
-
-	if (is.null(Diag) || is.null(Diag$diagram)) {
-		return (list(h1 = 0.0, h2 = 0.0))
-	}
-
-	diag <- Diag$diagram
-	h1_pers <- 0.0
-	h2_pers <- 0.0
-
-	h1_idx <- which(diag[, 1] == 1)
-	if (length(h1_idx) > 0) {
-		h1_pers <- max(diag[h1_idx, 3] - diag[h1_idx, 2])
-	}
-
-	h2_idx <- which(diag[, 1] == 2)
-	if (length(h2_idx) > 0) {
-		h2_pers <- max(diag[h2_idx, 3] - diag[h2_idx, 2])
-	}
-
-	return (list(h1 = h1_pers, h2 = h2_pers))
-}
-
-main_loop <- function() {
-	attach_shm()
-	on.exit(.C("r_shm_detach"))
-
-	cat("[R-Kernel] Starting Real-Time Sensing Loop (Interval: 2s) ...\n")
-
-	repeat {
-		vec_data <- read_vectors(sample_count = 128)
-		adj_data <- read_adjacency()
-
-		mean_ricci <- compute_forman_ricci(adj_data$adj, adj_data$active_nodes)
-		tda_res <- compute_tda_persistence(vec_data$matrix)
-
-		state_flags <- 0
-		if (mean_ricci < -1.5) {
-			state_flags <- bitwOr(state_flags, 2) # PERTURBED
-		}
-		if (mean_ricci < -3.0) {
-			state_flags <- bitwOr(state_flags, 4) # CRITICAL
-		}
-		if (tda_res$h1 > 0.8 || tda_res$h2 > 0.5) {
-			state_flags <- bitwOr(state_flags, 8) # TDA_DISRUPTION
-		}
-
-		.C("r_shm_update_metrics",
-			 as.double(mean_ricci),
-			 as.double(tda_res$h1),
-			 as.double(tda_res$h2),
-			 as.integer(state_flags))
-
-		cat(sprintf("[R-Kernel Sensing] Mean Ricci: %6.2f | H1 Pers: %5.3f | H2 Pers: %5.3f | State Flags: 0x%02X\n",
-								mean_ricci, tda_res$h1, tda_res$h2, state_flags))
-
-		Sys.sleep(2.0)
-	}
-}
-
-main_loop()
 </file>
 
 <file path="src/kernel/r/shm_r_bridge.c">
@@ -1479,351 +2672,6 @@ void r_shm_detach(void) {
 }
 </file>
 
-<file path="tests/test_shm.c">
-/**
- * @file test_shm.c
- * @brief REVELATIO II Cytoplasm IV Shared Memory Attach & Sanity Test
- */
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <errno.h>
-#include <inttypes.h>
-#include "../include/cytoplasm_v4.h"
-
-int main(void) {
-	printf("=== REVELATIO II // Cytoplasm IV Shared Memory Vrification ===\n\n");
-
-	/* 1. Compile-Time & Runtime Layout Checks */
-	printf("[1] Checking Structure Offsets & Memory Sized...\n");
-	printf("  - Size of HeaderSection: %zu B\n", sizeof(HeaderSection));
-	printf("  - Size of TensorCoefficientSection: %zu B\n", sizeof(TensorCoefficientSection));
-	printf("  - Size of ParticleOutputArea: %zu B\n", sizeof(ParticleOutputArea));
-	printf("  - Size of AdjacencyMatrixSection: %zu B\n", sizeof(AdjacencyMatrixSection));
-	printf("  - Size of VectorSlot: %zu B\n", sizeof(VectorSlot));
-	printf("  - Size of TextSlot: %zu B\n", sizeof(TextSlot));
-	printf("  - Total CytoplasmV4 Size: %zu B (%.2f MB)\n\n",
-			sizeof(CytoplasmV4), (double)sizeof(CytoplasmV4) / (1024.0 * 1024.0));
-
-	printf("  - Offset of header: 0x%08ZX\n", offsetof(CytoplasmV4, header));
-	printf("  - Offset of coefficients: 0x%08ZX\n", offsetof(CytoplasmV4, coefficients));
-	printf("  - Offset of particles_output: 0x%08ZX\n", offsetof(CytoplasmV4, particles_output));
-	printf("  - Offset of adjacency_matrix: 0x%08ZX (Target: 0x00004000)\n", offsetof(CytoplasmV4, adjacency_matrix));
-	printf("  - Offset of vectors: 0x%08ZX\n", offsetof(CytoplasmV4, vectors));
-	printf("  - Offset of text_lru: 0x%08ZX\n\n", offsetof(CytoplasmV4, text_lru));
-
-	if (offsetof(CytoplasmV4, adjacency_matrix) != 0x4000) {
-		fprintf(stderr, "[FATAL ERROR] Adjacency matrix offset mismatch! Expected 0x4000.\n");
-		return EXIT_FAILURE;
-	}
-
-	/* 2. Attach or Create Shared Memory */
-	printf("[2] Attaching to System V Shared Memory (Key: 0x%08X, Size: 512MB)...\n", CYTOPLASM_V4_IPC_KEY);
-	
-	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY, sizeof(CytoplasmV4), IPC_CREAT | 0666);
-	if (shmid < 0) {	
-		perror("  [ERROR] shmget failed");
-		return EXIT_FAILURE;
-	}
-	printf("  - shmget SUCCESS: shmid = %d\n", shmid);
-
-	void *shm_ptr = shmat(shmid, NULL, 0);
-	if (shm_ptr == (void *)-1) {
-		perror("  [ERROR] shmat failed");
-		return EXIT_FAILURE;
-	}
-	printf("  - shmat SUCCESS: Attachied at virtual address %p\n\n", shm_ptr);
-
-	CytoplasmV4 *cytoplasm = (CytoplasmV4 *)shm_ptr;
-
-	/* 3. Initialize or Validate Header */
-	printf("[3] Validating Header Magic Number...\n");
-	if (cytoplasm->header.magic_number != 0x4150455052455634ULL) {
-		printf("  - Uninitialized Shared Memory segment detected. Initializing Header...\n");
-		cytoplasm->header.magic_number = 0x4150455052455634ULL; /* "APEPREV4" */
-		cytoplasm->header.write_index = 0;
-		cytoplasm->header.read_index = 0;
-		cytoplasm->header.re_lambda_max = -0.45;
-		cytoplasm->header.mean_ricci_curvature = 0.0;
-		cytoplasm->header.state_flags = STATE_FLAG_STABLE;
-		cytoplasm->header.active_node_count = 0;
-		cytoplasm->header.last_updated_epoch_ns = 0;
-		printf("  - Header Initialized: Magic = 0x%" PRIX64 " [APEPREV4]\n", cytoplasm->header.magic_number);
-	} else {
-		printf("  - Existing Shared Memory Segment Verified: Magic = 0x%" PRIX64 " [APEPREV4]\n", cytoplasm->header.magic_number);
-	}
-
-	/* 4. Execute Read/Write Sanity Tests */
-	printf("\n[4] Executing Read/Write Sanity Tests...\n");
-	cytoplasm->header.write_index++;
-	uint64_t current_widx = cytoplasm->header.write_index;
-
-	/* Test Vector Ring Buffer Write */
-	uint32_t v_slot_idx = (uint32_t)(current_widx % VECTOR_RING_CAPACITY);
-	cytoplasm->vectors[v_slot_idx].slot_id = current_widx;
-	cytoplasm->vectors[v_slot_idx].timestamp_ns = 1700000000000000000ULL;
-	cytoplasm->vectors[v_slot_idx].values[0] = 1.2345f;
-	cytoplasm->vectors[v_slot_idx].values[127] = -9.8765f;
-
-	printf("  - Vector Ring Slot [%u] Write OK (Slot ID: %"PRIu64 ", Val[0]: %.4f, Val[127]: %.4f)\n",
-			v_slot_idx, cytoplasm->vectors[v_slot_idx].slot_id,
-			cytoplasm->vectors[v_slot_idx].values[0], cytoplasm->vectors[v_slot_idx].values[127]);
-
-	/* Test Text LRU Buffer Write */
-	uint32_t t_slot_idx = (uint32_t)(current_widx % TEXT_LRU_CAPACITY);
-	cytoplasm->text_lru[t_slot_idx].slot_id = current_widx;
-	snprintf(cytoplasm->text_lru[t_slot_idx].uri, TEXT_URI_MAX_LEN, "at://did:plc:revelatio2/app.bsky.feed.post/test001");
-	snprintf(cytoplasm->text_lru[t_slot_idx].author_did, TEXT_AUTHOR_MAX_LEN, "did:plc:revelatio2");
-	snprintf(cytoplasm->text_lru[t_slot_idx].text, TEXT_BODY_MAX_LEN, "REVELATIO II Cytoplasm IV SHM Test Post");
-	cytoplasm->text_lru[t_slot_idx].structural_role = ROLE_SINGULARITY_CATALYST;
-
-	printf("  - Text LRU Slot [%u] Write OK (URI: %s, Role: 0x%02X)\n",
-			t_slot_idx, cytoplasm->text_lru[t_slot_idx].uri, cytoplasm->text_lru[t_slot_idx].structural_role);
-
-	/* Test Adjacency Matrix Write */
-	cytoplasm->adjacency_matrix.weights[0][1] = 0.85f;
-	printf("  - Adjacency Matrix Weight [0][1] Write OK (Weight: %.2f)\n", cytoplasm->adjacency_matrix.weights[0][1]);
-
-	/* 5. Detach */
-	printf("\n[5] Detaching Shared Memory...\n");
-	if (shmdt(shm_ptr) < 0) {
-		perror("  [ERROR] shmdt failed");
-		return EXIT_FAILURE;
-	}
-	printf("  - shmdt SUCCESS. Shared Memory Verification Passed Cleanly!\n\n");
-	printf("=== ALL CHECKS PASSED ===\n");
-
-	return EXIT_SUCCESS;
-}
-</file>
-
-=======
->>>>>>> origin/master
-<file path="ARCHITECUTURE.md">
-# REVELATIO II : System Engineering & Mathematical Specification
-### Dual-Layer Tensor-Field & Graph-PDE Autopoietic Sensing Engine
-#### Document Version: 2.0.0-APEP
-
----
-
-## 1. System Architecture & Mathematical Foundations
-
-REVELATIO II は、REVELATIO I におけるスカラー還元（$u(t) = \|\mathbf{v}(t)\|_2$）および擬似 1 次元格子の限界を完全突破し、**128次元特徴量テンソル場（Macro-Continuum）** と **Bluesky の動的グラフトポロジー（Micro-Interactions）** を直接結合した「グラフ偏微分方程式（Graph Reaction-Diffusion PDE）」および「リッチフロー多様体幾何学（Ricci Flow Manifold Geometry）」に基づく次世代オートポイエーティックセンシングエンジンである。
-
-```
-[Bluesky Jetstream API] 
-       │
-       ▼
-[Phase 1: Go Ingester] ──(128D N-Gram & Graph Topology)──► [Shared Memory: Cytoplasm IV (512MB)]
-                                                                  │      ▲
-       ┌──────────────────────────────────────────────────────────┘      │ (New Coefficients)
-       │                                                                 │
-       ├──► [Phase 2A: R Analytics Kernel] ◄──(IPC Trigger)──────────────┤
-       │    (TDA H₁/H₂ Persistence, Graph Laplacian L(t), Ricci Curvature)│
-       │                                                                 │
-       ├──► [Phase 2B: Julia Compute Engine] ────────────────────────────┘
-       │    (Vector/Graph SINDy-PDE Sparse Regression)
-       │
-       ▼
-[Phase 3: .NET Gateway Service]
-       │
-       ├─► [MariaDB Event Archive] (Longitudinal Structural Memory)
-       │
-       ▼ (WebSocket Broadcast)
-[Phase 4: WebGL / React WebUI] (128D Manifold Deformable HUD)
-```
-
-### [System State Machine]
-*   **STABLE** : $\text{Re}(\lambda_{\max}) \le -0.40$ かつ 局所平均曲率 $\bar{R} \ge 0$  
-    $\rightarrow$ 128次元多様体上の調和的な回転・流動。通常ストリーム連続インジェクション。
-*   **QUIET** : $-0.40 < \text{Re}(\lambda_{\max}) < -0.30$  
-    $\rightarrow$ 局所多様体の微小振動。グラフトポロジーの近傍バッファ再構築。
-*   **PERTURBED** : $-0.30 \le \text{Re}(\lambda_{\max}) < -0.05$ または 曲率歪み $|R_{ij}| > 1.2$  
-    $\rightarrow$ エメラルドグリーンの流体脈動と変形。言論の過熱・偏向現象。起爆粒子（触媒ポスト）抽出アクティブ。
-*   **CRITICAL** : $\text{Re}(\lambda_{\max}) \ge -0.05$ または 限界界面断絶（$H_1 / H_2$ 永続ホモロジー破綻）  
-    $\rightarrow$ クリムゾンレッドの相転移（特異点スパイク発生）。限界界面穿孔ポストおよび特異点起爆ポストの 3D アンカーポップアップ表示。MariaDB への非破壊高圧縮アーカイビング発動。
-
-### [Macro-Tensor Mathematical Equations]
-
-1.  **グラフ反応拡散系偏微分方程式 (Graph Reaction-Diffusion PDE - Julia Engine)**:
-    $N$ 個の動的ノード上の 128 次元特徴量状態行列 $\mathbf{U}(t) \in \mathbb{R}^{N \times 128}$ に対する運動方程式：
-    $$\frac{\partial \mathbf{U}}{\partial t} = \mathbf{F}(\mathbf{U}) - \mathbf{D} \cdot (L(t) \otimes I_{128}) \mathbf{U}$$
-    *   $\mathbf{F}(\mathbf{U}) = \mathbf{C}_1 \mathbf{U} + \mathbf{C}_2 (\mathbf{U} \circ \mathbf{U})$ : SINDy により同定される非線形自己増幅・相互作用項
-    *   $L(t) = D(t) - A(t)$ : Bluesky のインタラクション（リポスト・引用・返信）から生成される動的グラフ・ラプラシアン
-    *   $\mathbf{D} \in \mathbb{R}^{128 \times 128}$ : 特徴量次元間の異方性拡散テンソル
-
-2.  **多様体計量とリッチフロー歪み (Ricci Curvature & Metric Tensor - R Engine)**:
-    128次元潜在空間におけるデータ密度の局所不均一性から計量テンソル $g_{ij}$ を算出。空間の変形速度をリッチフロー方程式で記述：
-    $$\frac{\partial g_{ij}}{\partial t} = -2 R_{ij}$$
-    *   局所曲率 $R_{ij} < 0$ の急増は、特定の価値観・語彙への言論の急激な収縮（ブラックホール化・エコーチェンバーの巨大化）を幾何学的に判定する。
-
-3.  **クロネッカー積固有スペクトルと相転移判定 (R Engine)**:
-    結合ラプラシアン $\mathcal{L} = L(t) \otimes \Sigma_{\text{feature}}$ の最大固有値実部 $\text{Re}(\lambda_{\max})$ を算出。$\text{Re}(\lambda_{\max}) \ge -0.05$ の跳躍をもって、言論空間全体の構造的相転移（限界界面の崩壊）と定義する。
-
-### [Micro-Particle Attribution Formula]
-
-相転移または曲率特異点検出時における「起爆粒子（つぶやき）」の寄与スコア $S_i$ の算定：
-$$S_i = \left\| \mathbf{v}_{\max}(i) \right\|^2 \cdot \left\| \nabla_{\mathbf{U}_i} \mathcal{R}_{\text{SINDy}} \right\|_F \cdot (1 + |R_{i}|)$$
-*   $\mathbf{v}_{\max}(i)$ : 最大固有値 $\lambda_{\max}$ に対応する固有ベクトルの第 $i$ ノード成分
-*   $\nabla_{\mathbf{U}_i} \mathcal{R}_{\text{SINDy}}$ : SINDy 残差に対するノード $i$ の感度行列（フロベニウスノルム）
-*   $R_i$ : ノード $i$ 周辺の局所リッチ曲率
-*   **逆射影**: スコア $S_i$ 上位のノードインデックスを、共有メモリ内の `Text LRU Buffer` の物理スロットへマッピングしてテキスト情報を即時抽出する。
-
----
-
-## 2. Shared Memory Specification (Cytoplasm IV : Key 0x41504550)
-
-*   **Total Footprint**: 512 MB (Linux System V Shared Memory)
-*   **IPC Key**: `0x41504550` ("APEP")
-
-### [Memory Layout Map]
-
-| Address Range | Section Name | Size | Structure & Content |
-| :--- | :--- | :--- | :--- |
-| `0x00000000 - 0x00000100` | Header Section | 256 B | アトミックインデックス, $\text{Re}(\lambda_{\max})$, 曲率指標 $\bar{R}$, ステートフラグ, タイムスタンプ |
-| `0x00000100 - 0x00000500` | Tensor Coefficients | 1,024 B | 128D SINDy 係数テンソル ($\mathbf{C}_1, \mathbf{C}_2$), 拡散テンソル $\mathbf{D}$, 残差 |
-| `0x00000500 - 0x00004000` | Particle Output Area | 15,104 B | 抽出トリガーポスト (最大 64 件) のスロット ID, 寄与スコア $S_i$, 局所曲率, 構造的役割フラグ |
-| `0x00004000 - 0x00044000` | Adjacency Matrix | 262,144 B | 近傍グラフの動的隣接行列 $A(t)$ (256×256 Float32 Dense Buffer) |
-| `0x00044000 - 0x0C044000` | Vector Ring Buffer | 192 MB | 128D 特徴量ベクトルリングバッファ (容量: 262,144 スロット, 各 768 B [ID, TS, Float32[128]]) |
-| `0x0C044000 - 0x20000000` | Text LRU Buffer | 320 MB | テキストメタデータ LRU スロット (容量: 16,384 スロット, 各 20.48 KB [URI, Author, Text, GraphMeta]) |
-
----
-
-## 3. End-to-End Implementation Workflow by Layer
-
-### Phase 1: Go Ingester & Graph Topology Extractor
-1.  `bluesky_ingest.go` において Jetstream の `app.bsky.feed.post` をリアルタイム受信。
-2.  テキストから 128 次元 n-gram ハッシュ射影ベクトル $\mathbf{v}_t$ を生成し、`Vector Ring Buffer` へアトミック書き込み。
-3.  同時に、`reply`, `quote`, `mention` 情報を抽出し、共有メモリ内の `Adjacency Matrix` 領域上の対応するノード間の結合強度 $A_{ij}$ を動的に更新。
-4.  テキスト本文、URI、DID を `Text LRU Buffer` へマルチバイト UTF-8 安全に書き込み。
-
-### Phase 2: R & Julia Dual-Engine (Graph SINDy-PDE & Ricci Geometry)
-1.  **[R Engine]**:
-    *   `Vector Ring Buffer` および `Adjacency Matrix` から最新窓（例: 256ステップ）のテンソル場を取得。
-    *   持続ホモロジー $H_1, H_2$ を計算。構造破綻（TDA Disruption）検知時に Julia へ IPC シグナル送信。
-    *   局所計量 $g_{ij}$ からリッチ曲率 $R_{ij}$ を算出。
-2.  **[Julia Engine]**:
-    *   TDA シグナル受信時、128次元状態行列 $\mathbf{U}(t)$ に対する **Vector/Graph SINDy-PDE** スパース回帰を実行。
-    *   非線形相互作用テンソル $\mathbf{C}_1, \mathbf{C}_2$ および拡散テンソル $\mathbf{D}$ を同定し、共有メモリの `Tensor Coefficients` へ送り返す。
-3.  **[R Engine (Spectral Feedback)]**:
-    *   同定されたテンソル係数を用いて結合ラプラシアン $\mathcal{L}$ を再構築し、$\text{Re}(\lambda_{\max})$ を更新。
-    *   $\text{Re}(\lambda_{\max}) \ge -0.30$ または $|R_{ij}| > 1.2$ の場合、粒子寄与スコア $S_i$ を全ノードで計算。
-    *   上位 64 件の起爆スロットインデックスおよび役割分類（特異点起爆 / 界面穿孔 / 渦中心）を `Particle Output Area` に書き込む。
-
-### Phase 3: .NET Gateway Service & MariaDB Event Archive
-1.  `CytoplasmReader.cs` が 共有メモリの `Particle Output Area` をゼロコピーで高速極小ポーリング。
-2.  臨界イベント発祥時、抽出されたスロットインデックスに基づき `Text LRU Buffer` からポスト詳細を取得。
-3.  **MariaDB への非同期永続化**:
-    *   `spectrum_history_v2`: タイムスタンプ、$\text{Re}(\lambda_{\max})$、平均リッチ曲率 $\bar{R}$、SINDy テンソル係数を保存。
-    *   `critical_trigger_posts_v2`: イベント ID、ポスト URI、著者 DID、本文、寄与スコア $S_i$、局所曲率 $R_i$、構造的役割分類を保存。
-4.  JSON ペイロードを構築し、WebSocket 経由でフロントエンドへブロードキャスト。
-
-### Phase 4: React / WebGL 128D Manifold Visualizer
-1.  `Three.js` / WebGL カスタムシェーダーにより、128次元多様体を主成分・曲率テンソルに基づき 3D 幾何学メッシュとしてレンダリング。
-2.  `Re(\lambda_{\max})` および 局所曲率 $R_{ij}$ に応じた動的マテリアル変化：
-    *   STABLE: 青い幾何学的球面。調和的回転。
-    *   PERTURBED: エメラルドグリーンの流体脈動と変形。
-    *   CRITICAL: クリムゾンレッドへの全相転移。曲率負の特異点に鋭利な幾何学スパイクを挺出。
-3.  **Holographic Card Overlay**: スパイク先端（特異点ノード）に追従する 3D アンカーカードを描画し、構造的起爆ポストの著者、本文、寄与スコア $S_i$、および「界面穿孔ポスト」「特異点起爆ポスト」のラベルをリアルタイム表示。
-
----
-
-## 4. Database Schema (MariaDB)
-
-```sql
-CREATE DATABASE IF NOT EXISTS revelatio_db
-    CHARACTER SET utf8mb4
-    COLLATE utf8mb4_unicode_ci;
-
-USE revelatio_db;
-
--- マクロ・システム状態および多様体曲率履歴
-CREATE TABLE IF NOT EXISTS spectrum_history_v2 (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    calculated_at_ns BIGINT NOT NULL,
-    re_lambda_max DOUBLE NOT NULL,
-    mean_ricci_curvature DOUBLE NOT NULL,
-    tda_h1_persistence DOUBLE NOT NULL,
-    tda_h2_persistence DOUBLE NOT NULL,
-    sindy_residual DOUBLE NOT NULL,
-    state_flags INT UNSIGNED NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_calculated_at (calculated_at_ns),
-    INDEX idx_re_lambda (re_lambda_max)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- 微視的・構造的起爆粒子（つぶやき）ログ
-CREATE TABLE IF NOT EXISTS critical_trigger_posts_v2 (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    spectrum_id BIGINT NOT NULL,
-    slot_index INT UNSIGNED NOT NULL,
-    post_uri VARCHAR(256) NOT NULL,
-    author_did VARCHAR(128) NOT NULL,
-    post_text TEXT NOT NULL,
-    contribution_score DOUBLE NOT NULL,
-    local_ricci_curvature DOUBLE NOT NULL,
-    structural_role ENUM('SINGULARITY_CATALYST', 'BOUNDARY_BREAKER', 'VORTICITY_CENTER') NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (spectrum_id) REFERENCES spectrum_history_v2(id) ON DELETE CASCADE,
-    INDEX idx_uri (post_uri),
-    INDEX idx_author (author_did),
-    INDEX idx_role (structural_role)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-```
-
----
-
-## 5. Verification & Validation Protocol
-
-1.  **高次元アドバーサリアル・バーストテスト**:
-    *   Bluesky インジェスターに対し、異種対立的な意味論ベクトルを持つ 1,000 件の疑似ポスト群（限界界面穿孔データ）を 10ms 以内に人工注入する。
-2.  **多様体曲率・SINDy 応答検証**:
-    *   R エンジンが局所負曲率の不連続な増加（$R_{ij} < -2.0$）を検知し、Julia の Vector SINDy-PDE が非線形相互作用項 $\mathbf{C}_2$ の非ゼロ同定を 200ms 以内に達成することを確認。
-3.  **起爆粒子抽出精度テスト**:
-    *   注入された疑似ポスト群の中から、幾何学的歪みを引き起こした正確な触媒ポスト URI が `Particle Output Area` 経由で .NET Gateway にて抽出され、MariaDB に正確な `structural_role` 分類とともに 15ms 以内に保存されることを検証。
-4.  **WebGL レンダリング & アンカー追従検証**:
-    *   WebUI 上でメッシュが赤色スパイク形状に変形し、抽出された起爆ポストが 3D 空間上の特異点座標に正確にバインドされてホログラフィック表示されることを確認する。
-</file>
-
-<<<<<<< HEAD
-<file path="go.mod">
-module github.com/TakaoTachibana/revelatio-ii
-
-go 1.26.5
-
-require github.com/gorilla/websocket v1.5.3
-</file>
-
-=======
->>>>>>> origin/master
-<file path="README.md">
-# REVELATIO II
-> **Dual-Layer Tensor-Field & Graph-PDE Autopoietic Sensing Engine**
-
-REVELATIO II は、Bluesky のリアルタイムストリームを 128 次元特徴量テンソル場および動的グラフトポロジーとして直接マッピングし、**グラフ偏微分方程式（Graph Reaction-Diffusion PDE）** と **リッチフロー多様体幾何学（Ricci Flow Manifold Geometry）** に基づいて言語空間の相転移・言論の極化・構造的起爆ポストをリアルタイムに解剖・抽出するオートポイエーティックセンシングエンジンです。
-
----
-
-## 🛠 システム構成
-
-- **Go Ingester**: Jetstream API 受信、128D n-gram ハッシュ射影、動的隣接行列抽出
-- **Cytoplasm IV**: 512MB System V 共有メモリ (`Key: 0x41504550`)
-- **Julia Engine**: Vector / Graph SINDy-PDE スパース回帰 (反応拡散項の自律同定)
-- **R Analytics Kernel**: TDA ($H_1/H_2$ 永続ホモロジー)、リッチ曲率 $R_{ij}$、クロネッカー固有スペクトル
-- **.NET Gateway Service**: 共有メモリのゼロコピーリード、WebSocket ブロードキャスト、MariaDB アーカイビング
-- **WebGL / React WebUI**: 128D 多様体変形メッシュ、特異点アンカー型ホログラフィック 3D HUD
-
----
-
-## 📖 仕様書
-
-詳細なシステム構成、数式、共有メモリ領域マップについては [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) を参照してください。
-</file>
-
-<<<<<<< HEAD
 <file path=".gitignore">
 # OS & Editor
 .DS_Store
@@ -1871,6 +2719,183 @@ node_modules/
 *.so
 </file>
 
-=======
->>>>>>> origin/master
+<file path="src/kernel/r/ricci_tda_kernel.R">
+# REVELATIO II Phase 2-A: R Analaytics Kernel
+# 128D Manifold Ricci Curvature & TDA Persistence Disruption Engine
+
+suppressPackageStartupMessages({
+	library(TDA)
+	library(igraph)
+	library(matrixStats)
+})
+
+# Load C Bridge
+dyn.load("shm_r_bridge.so")
+
+attach_shm <- function() {
+	res <- .C("r_shm_attach", status = integer(1))
+	if (res$status != 0) {
+		stop(paste("[R-Kernel FATAL] Cannot attach to Cytoplasm IV. Code:", res$status))
+	}
+	cat("[R-Kernel] Attached to Cytoplasm IV Shared Memory (512MB)\n")
+}
+
+read_vectors <- function(sample_count = 256) {
+	out_mat <- numeric(sample_count * 128)
+	out_ts <- numeric(sample_count)
+	res <- .C("r_shm_read_recent_vectors",
+						sample_count = as.integer(sample_count),
+						out_matrix = as.double(out_mat),
+						out_timestamps = as.double(out_ts))
+
+	mat <- matrix(res$out_matrix, nrow = sample_count, ncol = 128, byrow = TRUE)
+	return(list(matrix = mat, timestamps = res$out_timestamps))
+}
+
+read_adjacency <- function() {
+	out_adj <- numeric(256 * 256)
+	active_n <- integer(1)
+	res <- .C("r_shm_read_adjacency_matrix",
+						out_adj_256x256 = as.double(out_adj),
+						active_nodes = as.integer(active_n))
+
+	adj_mat <- matrix(res$out_adj_256x256, nrow = 256, ncol = 256, byrow = TRUE)
+	return(list(adj = adj_mat, active_nodes = res$active_nodes))
+
+}
+
+compute_forman_ricci <- function(adj_matrix, active_nodes) {
+	if (active_nodes < 3) {
+		return (0.0)
+	}
+
+	sub_adj <- adj_matrix[1:active_nodes, 1:active_nodes]
+
+	max_w <- max(sub_adj)
+	if (max_w <= 0) {
+		return (0.0)
+	}
+
+	norm_adj <- sub_adj / max_w
+	deg <- rowSums(norm_adj)
+
+	edges <- which(norm_adj > 0, arr.ind = TRUE)
+	edges <- edges[edges[, 1] < edges[, 2], , drop = FALSE]
+
+	if (nrow(edges) == 0) {
+		return (0.0)
+	}
+
+	tri_mat <- norm_adj %*% norm_adj
+	ricci_sum <- 0
+	valid_edges <- 0
+
+	for (e in 1:nrow(edges)) {
+		u <- edges[e, 1]
+		v <- edges[e, 2]
+
+		deg_u <- max(deg[u], 1e-5)
+		deg_v <- max(deg[v], 1e-5)
+		deg_sum <- deg_u + deg_v
+		triangles_uv <- tri_mat[u, v]
+
+		raw_r <- 4.0 - deg_sum + 3.0 * triangles_uv
+		norm_r <- (raw_r / deg_sum) - 0.111
+
+		ricci_sum <- ricci_sum + norm_r
+		valid_edges <- valid_edges + 1
+	}
+
+	if (valid_edges == 0) {
+		return (0.0)
+	}
+	mean_ricci <- ricci_sum / valid_edges
+	return (mean_ricci)
+}
+
+compute_tda_persistence <- function(vec_matrix) {
+	clean_mat <- vec_matrix[!duplicated(vec_matrix), ]
+	if (nrow(clean_mat) < 15) {
+		return (list(h1 = 0.0, h2 = 0.0))
+	}
+
+	svd_res <- prcomp(clean_mat, rank. = 4, scale. = FALSE)
+	low_dim_mat <- svd_res$x
+
+	dist_max <- as.matrix(dist(low_dim_mat))
+	max_scale <- quantile(dist_max, 0.75)
+
+	if (max_scale <= 0) {
+		return (list(h1 = 0.0, h2 = 0.0))
+	}
+
+	Diag <- tryCatch({
+		ripsDiag(X = low_dim_mat, maxdimension = 2, maxscale = max_scale, library = "GUDHI")
+	}, error = function(e) {
+		return (NULL)
+	})
+
+	if (is.null(Diag) || is.null(Diag$diagram)) {
+		return (list(h1 = 0.0, h2 = 0.0))
+	}
+
+	diag <- Diag$diagram
+	h1_pers <- 0.0
+	h2_pers <- 0.0
+
+	h1_idx <- which(diag[, 1] == 1)
+	if (length(h1_idx) > 0) {
+		h1_pers <- max(diag[h1_idx, 3] - diag[h1_idx, 2])
+	}
+
+	h2_idx <- which(diag[, 1] == 2)
+	if (length(h2_idx) > 0) {
+		h2_pers <- max(diag[h2_idx, 3] - diag[h2_idx, 2])
+	}
+
+	return (list(h1 = h1_pers, h2 = h2_pers))
+}
+
+main_loop <- function() {
+	attach_shm()
+	on.exit(.C("r_shm_detach"))
+
+	cat("[R-Kernel] Starting Real-Time Sensing Loop (Interval: 2s) ...\n")
+
+	repeat {
+		vec_data <- read_vectors(sample_count = 128)
+		adj_data <- read_adjacency()
+
+		mean_ricci <- compute_forman_ricci(adj_data$adj, adj_data$active_nodes)
+		tda_res <- compute_tda_persistence(vec_data$matrix)
+
+		state_flags <- 0
+		if (mean_ricci < -1.2) {
+			state_flags <- bitwOr(state_flags, 2) # PERTURBED
+		}
+		if (mean_ricci < -2.0) {
+			state_flags <- bitwOr(state_flags, 4) # CRITICAL
+		}
+		if (tda_res$h1 > 0.3 || tda_res$h2 > 0.2) {
+			state_flags <- bitwOr(state_flags, 8) # TDA_DISRUPTION
+		}
+
+		.C("r_shm_update_metrics",
+			 as.double(mean_ricci),
+			 as.double(tda_res$h1),
+			 as.double(tda_res$h2),
+			 as.integer(state_flags))
+
+		cat(sprintf("[R-Kernel Sensing] Mean Ricci: %6.2f | H1 Pers: %5.3f | H2 Pers: %5.3f | State Flags: 0x%02X\n",
+								mean_ricci, tda_res$h1, tda_res$h2, state_flags))
+
+		Sys.sleep(2.0)
+	}
+}
+
+if (sys.nframe() == 0) {
+	main_loop()
+}
+</file>
+
 </files>
