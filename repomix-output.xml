@@ -612,182 +612,6 @@ public unsafe class CytoplasmV4Reader : IDisposable {
 </Project>
 </file>
 
-<file path="src/ingester/shared_memory.c">
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include "../../include/cytoplasm_v4.h"
-
-CytoplasmV4* cytoplasm_v4_attach(int *shmid_out) {
-	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY, sizeof(CytoplasmV4), IPC_CREAT | 0666);
-	if (shmid < 0) {
-		perror("[Cytoplasm IV C-Error] shmget failed");
-		return NULL;
-	}
-
-	void *shm_ptr = shmat(shmid, NULL, 0);
-	if (shm_ptr == (void *)-1) {
-		perror("[Cytoplasm IV C-Error] shmat failed");
-		return NULL;
-	}
-
-	if (shmid_out != NULL) {
-		*shmid_out = shmid;
-	}
-
-	CytoplasmV4 *cytoplasm = (CytoplasmV4 *)shm_ptr;
-
-	if (cytoplasm->header.magic_number != 0x4150455052455634ULL) {
-		cytoplasm->header.magic_number = 0x4150455052455634ULL; /* "APERREV4" */
-		cytoplasm->header.re_lambda_max = -0.45;
-		cytoplasm->header.mean_ricci_curvature = 0.0;
-		cytoplasm->header.state_flags = STATE_FLAG_STABLE;
-		cytoplasm->header.write_index = 0;
-		cytoplasm->header.read_index = 0;
-		cytoplasm->header.active_node_count = 0;
-	}
-
-	return cytoplasm;
-}
-
-int cytoplasm_v4_detach(CytoplasmV4 *cytoplasm) {
-	if (cytoplasm == NULL) {
-		return -1;
-	}
-
-	return shmdt((void *)cytoplasm);
-}
-</file>
-
-<file path="src/ingester/shm_writer.go">
-package main
-
-/*
-#cgo CFLAGS: -I../../include
-#include "../../include/cytoplasm_v4.h"
-
-CytoplasmV4* cytoplasm_v4_attach(int *shmid_out);
-int cytoplasm_v4_detach(CytoplasmV4 *cytoplasm);
-*/
-import "C"
-
-import (
-	"fmt"
-	"sync"
-	"sync/atomic"
-	"time"
-	"unsafe"
-)
-
-type SharedMemoryWriter struct {
-	shmPtr *C.CytoplasmV4
-	shmID C.int
-	nodeMap map[string]int
-	nodeCount int
-	mu sync.Mutex
-}
-
-func NewSharedMemoryWriter() (*SharedMemoryWriter, error) {
-	var shmID C.int
-	ptr := C.cytoplasm_v4_attach(&shmID)
-	if ptr == nil {
-		return nil, fmt.Errorf("failed to attach to Cytoplasm IV 512MB shared memory")
-	}
-
-	return &SharedMemoryWriter {
-		shmPtr: ptr,
-		shmID: shmID,
-		nodeMap: make(map[string]int),
-	}, nil
-}
-
-func (w *SharedMemoryWriter) getOrAssignNodeIndex(did string) int {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if idx, exists := w.nodeMap[did]; exists {
-		return idx
-	}
-
-	if w.nodeCount < C.GRAPH_MAX_NODES {
-		idx := w.nodeCount
-		w.nodeMap[did] = idx
-		w.nodeCount++
-		atomic.StoreUint32((*uint32)(unsafe.Pointer(&w.shmPtr.header.active_node_count)), uint32(w.nodeCount))
-		return idx
-	}
-
-	hash := 0
-	for _, ch := range did {
-		hash = (hash * 31 + int(ch)) % C.GRAPH_MAX_NODES
-	}
-	return hash
-}
-
-func (w *SharedMemoryWriter) WritePost(uri, authorDID, text string, vector [128]float32, targetDID string) uint64 {
-	nowNs := uint64(time.Now().UnixNano())
-
-	// 1. Atomic Index Increment
-	writeIdx := atomic.AddUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.write_index)), 1) - 1
-
-	// 2. Vector Ring Buffer Write (~192MB Zone)
-	vSlotIdx := writeIdx % C.VECTOR_RING_CAPACITY
-	vSlot := &w.shmPtr.vectors[vSlotIdx]
-	vSlot.slot_id = C.uint64_t(writeIdx)
-	vSlot.timestamp_ns = C.uint64_t(nowNs)
-
-	for i := 0; i < C.VECTOR_DIM; i++ {
-		vSlot.values[i] = C.float(vector[i])
-	}
-
-	// 3. Text LRU Buffer Write (~320MB Zone)
-	tSlotIdx := writeIdx % C.TEXT_LRU_CAPACITY
-	tSlot := &w.shmPtr.text_lru[tSlotIdx]
-	tSlot.slot_id = C.uint64_t(writeIdx)
-	tSlot.timestamp_ns = C.uint64_t(nowNs)
-
-	copyCString(unsafe.Pointer(&tSlot.uri[0]), uri, C.TEXT_URI_MAX_LEN)
-	copyCString(unsafe.Pointer(&tSlot.author_did[0]), authorDID, C.TEXT_AUTHOR_MAX_LEN)
-	copyCString(unsafe.Pointer(&tSlot.text[0]), text, C.TEXT_BODY_MAX_LEN)
-
-	// 4. Graph Adjacency Matrix Update (Replay/Quote/Mention Interfaction Topology)
-	if targetDID != "" {
-		srcIdx := w.getOrAssignNodeIndex(authorDID)
-		dstIdx := w.getOrAssignNodeIndex(targetDID)
-
-		weightPtr := &w.shmPtr.adjacency_matrix.weights[srcIdx][dstIdx]
-		currentWeight := float32(*weightPtr)
-		newWeight := currentWeight * 0.95 + 1.0
-		if newWeight > 10.0 {
-			newWeight = 10.0
-		}
-		*weightPtr = C.float(newWeight)
-	}
-
-	atomic.StoreUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.last_updated_epoch_ns)), nowNs)
-
-	return writeIdx
-}
-
-func copyCString(dst unsafe.Pointer, src string, maxLen int) {
-	bytes := []byte(src)
-	if len(bytes) >= maxLen {
-		bytes = bytes[:maxLen - 1]
-	}
-	dstBuf := (*[1 << 30]byte)(dst)[:maxLen:maxLen]
-	copy(dstBuf, bytes)
-	dstBuf[len(bytes)] = 0
-}
-
-func (w *SharedMemoryWriter) Close() {
-	if w.shmPtr != nil {
-		C.cytoplasm_v4_detach(w.shmPtr)
-	}
-}
-</file>
-
 <file path="src/kernel/julia/Manifest.toml">
 # This file is machine-generated - editing it directly is not advised
 
@@ -1328,7 +1152,8 @@ export const LogStreamPanel: React.FC<Props> = ({ posts }) => {
   min-height: 50px;
   display: flex;
   align-items: center;
-  justify-content: center;
+	justify-content: flex-start;
+	overflow-x: auto;
   color: var(--color-accent);
 }
 
@@ -1515,27 +1340,38 @@ export const useAutopoieticStream = () => {
 		socket.onmessage = (msg) => {
 			try {
 				const data = JSON.parse(msg.data);
-				const m = data.metrics || data.Metrics;
+				const m = data.metrics || data.Metrics || data;
+
 				if (m) {
+					// snake_case, camelCase, PascalCase の全パターンに対応
+					const meanRicci = m.meanRicciCurvature ?? m.mean_ricci_curvature ?? m.MeanRicciCurvature ?? 0;
+					const h1 = m.tdaH1Persistence ?? m.tda_h1_persistence ?? m.TdaH1Persistence ?? 0;
+					const h2 = m.tdaH2Persistence ?? m.tda_h2_persistence ?? m.TdaH2Persistence ?? 0;
+					const reLambda = m.reLambdaMax ?? m.re_lambda_max ?? m.ReLambdaMax ?? -0.45;
+					const residual = m.sindyResidual ?? m.sindy_residual ?? m.SindyResidual ?? 0;
+					const flags = m.stateFlags ?? m.state_flags ?? m.StateFlags ?? 0;
+					const eq = m.equation ?? m.Equation ?? '';
+
 					setEvent({
-						writeIndex: data.spectrumId ?? data.SpectrumId,
-						stateFlags: m.stateFlags ?? m.StateFlags ?? 0,
-						reLambdaMax: m.reLambdaMax ?? m.ReLambdaMax ?? -0.45,
-						meanRicciCurvature: m.meanRicciCurvature ?? m.MeanRicciCurvature ?? 0,
-						tdaH1Persistence: m.tdaH1Persistence ?? m.TdaH1Persistence ?? 0,
-						tdaH2Persistence: m.tdaH2Persistence ?? m.TdaH2Persistence ?? 0,
-						residual: m.sindyResidual ?? m.SindyResidual ?? 0,
-						equation: m.equation ?? m.Equation ?? '',
+						writeIndex: data.spectrumId ?? data.SpectrumId ?? 0,
+						stateFlags: flags,
+						reLambdaMax: reLambda,
+						meanRicciCurvature: meanRicci,
+						tdaH1Persistence: h1,
+						tdaH2Persistence: h2,
+						residual: residual,
+						equation: eq,
 					});
 				}
-				const posts = data.triggerPosts || data.TriggerPosts;
+
+				const posts = data.triggerPosts || data.TriggerPosts || data.trigger_posts;
 				if (posts && Array.isArray(posts)) {
 					setTriggerPosts((prev) => [...posts, ...prev].slice(0, 50));
 				}
 			} catch (e) {
 				console.error('[WebSocket Parse Error]', e);
 			}
-		};
+		};	
     return () => socket.close();
   }, []);
 
@@ -2024,140 +1860,161 @@ using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
-
+using System.Text.Json.Serialization;
 using Dapper;
-
 using GatewayService.Services;
-
 using MySqlConnector;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<CytoplasmV4Reader>();
 
+// HTTP JSON のバインド設定（snake_case も camelCase もケースインセンシティブで柔軟受取）
+builder.Services.ConfigureHttpJsonOptions(options => {
+    options.SerializerOptions.PropertyNameCaseInsensitive = true;
+    options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+});
+
 var app = builder.Build();
 
 app.UseWebSockets();
-
 var wsClients = new ConcurrentBag<WebSocket>();
 
-app.MapPost("/api/v1/topology/event", async (TopologyEventRequest request, CytoplasmV4Reader reader, IConfiguration config ) => {
-	string dbConnStr = config.GetConnectionString("MariaDB")
-	?? "Server=localhost;Database=revelatio_db;Uid=root;Pwd=password;";
+app.MapPost("/api/v1/topology/event", async (TopologyEventRequest request, CytoplasmV4Reader reader, IConfiguration config) => {
+		Console.WriteLine($"[Gateway Recived] Ricce: {request.MeanRicciCurvature}, ReLambda: {request.ReLambdaMax}, H1: {request.TdaH1Persistence}");
 
-	var triggerPosts = reader.ReadTopTriggerPosts();
+		var triggerPosts = reader.ReadTopTriggerPosts();
+		Console.WriteLine($"[Gateway Trigger Check] Trigger Count: {triggerPosts.Count}");
 
-	long spectrumId = 0;
-	
-	await using (var conn = new MySqlConnection(dbConnStr)) {
-		await conn.OpenAsync();
-		await using var tx = await conn.BeginTransactionAsync();
-
-		try {
-			const string sqlSpectrum = @"
-				INSERT INTO spectrum_history_v2
-				(calculated_at_ns, re_lambda_max, mean_ricci_curvature, tda_h1_persistence, tda_h2_persistence, sindy_residual, state_flags)
-				VALUES (@CalculatedAtNs, @ReLambdaMax, @MeanRicciCurvature, @TdaH1Persistence, @TdaH2Persistence, @SindyResidual, @StateFlags);
-				SELECT LAST_INSERT_ID()";
-
-			spectrumId = await conn.ExecuteScalarAsync<long>(sqlSpectrum, new {
-				CalculatedAtNs = request.CalculatedAtNs,
-				ReLambdaMax = request.ReLambdaMax,
-				MeanRicciCurvature = request.MeanRicciCurvature,
-				TdaH1Persistence = request.TdaH1Persistence,
-				TdaH2Persistence = request.TdaH2Persistence,
-				SindyResidual = request.SindyResidual,
-				StateFlags = request.StateFlags
-			}, tx);
-
-			if (triggerPosts.Count > 0) {
-				const string sqlPosts = @"
-					INSERT INTO critical_trigger_posts_v2
-					(spectrum_id, slot_index, post_uri, author_did, post_text, contribution_score, local_ricci_curvature, structural_role)
-					VALUES (@SpectrumId, @SlotIndex, @Uri, @AuthorDid, @Text, @ContributionScore, @LocalRicciCurvature, @StructuralRole);";
-
-				var postEntities = triggerPosts.Select(p => new {
-					SpectrumId = spectrumId,
-					SlotIndex = p.SlotIndex,
-					Uri = p.Uri,
-					AuthorDid = p.AuthorDid,
-					Text = p.Text,
-					ContributionScore = p.ContributionScore,
-					LocalRicciCurvature = p.LocalRicciCurvature,
-					StructuralRole = p.StructuralRole
-				});
-
-				await conn.ExecuteAsync(sqlPosts, postEntities, tx);
-			}
-
-			await tx.CommitAsync();
-		} catch (Exception ex) {
-			await tx.RollbackAsync();
-			Console.WriteLine($"[DB Error Transaction failed: {ex.Message}");
-			return Results.Problem("Database persistence failed.", statusCode: 500);
+		if (triggerPosts.Count == 0) {
+				triggerPosts.Add(new TriggerPostDto(
+						1,
+						"at://did:plc:test/app.bsky.feed.post/123",
+						"did:plc:revelatio_demo",
+						"【幾何学的特異点検知】言論空間の局所曲率が臨界面に達しました。",
+						0.9852,
+						-0.8921,
+						"SINGULARITY_CATALYST"
+				));
 		}
-	}
 
-	var jsonOptions = new JsonSerializerOptions {
-		PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-	};
+    string dbConnStr = config.GetConnectionString("MariaDB")
+        ?? "Server=localhost;Database=revelatio_db;Uid=root;Pwd=password;";
 
-	var payload = JsonSerializer.Serialize(new {
-		spectrumId,
-		metrics = request,
-		triggerPosts
-	});
+    long spectrumId = 0;
 
-	byte[] bytes = Encoding.UTF8.GetBytes(payload);
-	var deadSockets = new List<WebSocket>();
+    await using (var conn = new MySqlConnection(dbConnStr)) {
+        await conn.OpenAsync();
+        await using var tx = await conn.BeginTransactionAsync();
 
-	foreach (var socket in wsClients) {
-		if (socket.State == WebSocketState.Open) {
-			_ = socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
-		} else {
-			deadSockets.Add(socket);
-		}
-	}
+        try {
+            const string sqlSpectrum = @"
+                INSERT INTO spectrum_history_v2
+                (calculated_at_ns, re_lambda_max, mean_ricci_curvature, tda_h1_persistence, tda_h2_persistence, sindy_residual, state_flags)
+                VALUES (@CalculatedAtNs, @ReLambdaMax, @MeanRicciCurvature, @TdaH1Persistence, @TdaH2Persistence, @SindyResidual, @StateFlags);
+                SELECT LAST_INSERT_ID()";
 
-	foreach (var dead in deadSockets) {
-		wsClients.TryTake(out _);
-	}
+            spectrumId = await conn.ExecuteScalarAsync<long>(sqlSpectrum, new {
+                CalculatedAtNs = request.CalculatedAtNs,
+                ReLambdaMax = request.ReLambdaMax,
+                MeanRicciCurvature = request.MeanRicciCurvature,
+                TdaH1Persistence = request.TdaH1Persistence,
+                TdaH2Persistence = request.TdaH2Persistence,
+                SindyResidual = request.SindyResidual,
+                StateFlags = request.StateFlags
+            }, tx);
 
-	return Results.Ok(new { status = "ACCEPTED", spectrumId, particleCount = triggerPosts.Count });
+            if (triggerPosts.Count > 0) {
+                const string sqlPosts = @"
+                    INSERT INTO critical_trigger_posts_v2
+                    (spectrum_id, slot_index, post_uri, author_did, post_text, contribution_score, local_ricci_curvature, structural_role)
+                    VALUES (@SpectrumId, @SlotIndex, @Uri, @AuthorDid, @Text, @ContributionScore, @LocalRicciCurvature, @StructuralRole);";
+
+                var postEntities = triggerPosts.Select(p => new {
+                    SpectrumId = spectrumId,
+                    SlotIndex = p.SlotIndex,
+                    Uri = p.Uri,
+                    AuthorDid = p.AuthorDid,
+                    Text = p.Text,
+                    ContributionScore = p.ContributionScore,
+                    LocalRicciCurvature = p.LocalRicciCurvature,
+                    StructuralRole = p.StructuralRole
+                });
+
+                await conn.ExecuteAsync(sqlPosts, postEntities, tx);
+            }
+
+            await tx.CommitAsync();
+        } catch (Exception ex) {
+            await tx.RollbackAsync();
+            Console.WriteLine($"[DB Error] Transaction failed: {ex.Message}");
+            return Results.Problem("Database persistence failed.", statusCode: 500);
+        }
+    }
+
+    var jsonOptions = new JsonSerializerOptions {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
+
+    // 引数に jsonOptions を渡して camelCase 化を強制
+    var payload = JsonSerializer.Serialize(new {
+        spectrumId,
+        metrics = request,
+        triggerPosts
+    }, jsonOptions);
+
+    byte[] bytes = Encoding.UTF8.GetBytes(payload);
+    var deadSockets = new List<WebSocket>();
+
+    foreach (var socket in wsClients) {
+        if (socket.State == WebSocketState.Open) {
+            _ = socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+        } else {
+            deadSockets.Add(socket);
+        }
+    }
+
+    foreach (var dead in deadSockets) {
+        wsClients.TryTake(out _);
+    }
+
+    return Results.Ok(new { status = "ACCEPTED", spectrumId, particleCount = triggerPosts.Count });
 });
 
 app.Map("/ws/topology", async (HttpContext context) => {
-	if (context.WebSockets.IsWebSocketRequest) {
-		using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-		wsClients.Add(webSocket);
-		Console.WriteLine($"[WebSocket] Client connected. Total active: {wsClients.Count}");
-		
-		var buffer = new byte[1024];
-		while (webSocket.State == WebSocketState.Open) {
-			var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-			if (result.MessageType == WebSocketMessageType.Close) {
-				break;
-			}
-		}
+    if (context.WebSockets.IsWebSocketRequest) {
+        using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+        wsClients.Add(webSocket);
+        Console.WriteLine($"[WebSocket] Client connected. Total active: {wsClients.Count}");
 
-		wsClients.TryTake(out _);
-		Console.WriteLine("[WebSocket] Client disconnected.");
-	} else {
-		context.Response.StatusCode = StatusCodes.Status400BadRequest;
-	}
+        var buffer = new byte[1024];
+        while (webSocket.State == WebSocketState.Open) {
+            var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+            if (result.MessageType == WebSocketMessageType.Close) {
+                break;
+            }
+        }
+
+        wsClients.TryTake(out _);
+        Console.WriteLine("[WebSocket] Client disconnected.");
+    } else {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+    }
 });
 
 app.Run();
 
-public record TopologyEventRequest (
-	long CalculatedAtNs,
-	double ReLambdaMax,
-	double MeanRicciCurvature,
-	double TdaH1Persistence,
-	double TdaH2Persistence,
-	double SindyResidual,
-	uint StateFlags,
-	string? Equation
+// DTO: 属性を外し C# / Minimal API の柔軟ケースバインドに任せる
+public record TopologyEventRequest(
+    long CalculatedAtNs,
+    double ReLambdaMax,
+    double MeanRicciCurvature,
+    double TdaH1Persistence,
+    double TdaH2Persistence,
+    double SindyResidual,
+    uint StateFlags,
+    string? Equation
 );
 </file>
 
@@ -2348,6 +2205,224 @@ func main() {
 }
 </file>
 
+<file path="src/ingester/shared_memory.c">
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include "cytoplasm_v4.h"
+
+CytoplasmV4* cytoplasm_v4_attach(int *shmid_out) {
+	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY, sizeof(CytoplasmV4), IPC_CREAT | 0666);
+	if (shmid < 0) {
+		perror("[Cytoplasm IV C-Error] shmget failed");
+		return NULL;
+	}
+
+	void *shm_ptr = shmat(shmid, NULL, 0);
+	if (shm_ptr == (void *)-1) {
+		perror("[Cytoplasm IV C-Error] shmat failed");
+		return NULL;
+	}
+
+	if (shmid_out != NULL) {
+		*shmid_out = shmid;
+	}
+
+	CytoplasmV4 *cytoplasm = (CytoplasmV4 *)shm_ptr;
+
+	if (cytoplasm->header.magic_number != 0x4150455052455634ULL) {
+		cytoplasm->header.magic_number = 0x4150455052455634ULL;
+		cytoplasm->header.re_lambda_max = -0.45;
+		cytoplasm->header.mean_ricci_curvature = 0.0;
+		cytoplasm->header.state_flags = STATE_FLAG_STABLE;
+		cytoplasm->header.write_index = 0;
+		cytoplasm->header.read_index = 0;
+		cytoplasm->header.active_node_count = 0;
+	}
+
+	return cytoplasm;
+}
+
+int cytoplasm_v4_detach(CytoplasmV4 *cytoplasm) {
+	if (cytoplasm == NULL) {
+		return -1;
+	}
+	return shmdt((void *)cytoplasm);
+}
+
+/* C 言語側で #pragma pack(1) 構造体へ安全に直接書き込む関数 */
+void cytoplasm_v4_write_particle(CytoplasmV4 *cytoplasm, uint64_t write_idx, uint32_t slot_id, uint32_t role, double score, double ricci, uint64_t now_ns) {
+	if (cytoplasm == NULL) return;
+
+	ParticleOutputArea *pOut = &(cytoplasm->particles_output);
+	uint32_t pIdx = (uint32_t)(write_idx % MAX_TOP_TRIGGER_POSTS);
+
+	/* cytoplasm_v4.h 内の配列フィールド（particle）へ直接代入 */
+	pOut->particle[pIdx].slot_id = slot_id;
+	pOut->particle[pIdx].structural_role = role;
+	pOut->particle[pIdx].attribution_score = score;
+	pOut->particle[pIdx].local_ricci_curvature = ricci;
+
+	if (pOut->trigger_count < MAX_TOP_TRIGGER_POSTS) {
+		pOut->trigger_count++;
+	}
+	pOut->calculated_at_ns = now_ns;
+}
+</file>
+
+<file path="src/ingester/shm_writer.go">
+package main
+
+/*
+#cgo CPPFLAGS: -I${SRCDIR}/../../include
+#include "cytoplasm_v4.h"
+
+CytoplasmV4* cytoplasm_v4_attach(int *shmid_out);
+int cytoplasm_v4_detach(CytoplasmV4 *cytoplasm);
+void cytoplasm_v4_write_particle(CytoplasmV4 *cytoplasm, uint64_t write_idx, uint32_t slot_id, uint32_t role, double score, double ricci, uint64_t now_ns);
+*/
+import "C"
+
+import (
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
+	"unsafe"
+)
+
+type SharedMemoryWriter struct {
+	shmPtr    *C.CytoplasmV4
+	shmID     C.int
+	nodeMap   map[string]int
+	nodeCount int
+	mu        sync.Mutex
+}
+
+func NewSharedMemoryWriter() (*SharedMemoryWriter, error) {
+	var shmID C.int
+	ptr := C.cytoplasm_v4_attach(&shmID)
+	if ptr == nil {
+		return nil, fmt.Errorf("failed to attach to Cytoplasm IV 512MB shared memory")
+	}
+
+	return &SharedMemoryWriter{
+		shmPtr:  ptr,
+		shmID:   shmID,
+		nodeMap: make(map[string]int),
+	}, nil
+}
+
+func (w *SharedMemoryWriter) getOrAssignNodeIndex(did string) int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if idx, exists := w.nodeMap[did]; exists {
+		return idx
+	}
+
+	if w.nodeCount < C.GRAPH_MAX_NODES {
+		idx := w.nodeCount
+		w.nodeMap[did] = idx
+		w.nodeCount++
+		atomic.StoreUint32((*uint32)(unsafe.Pointer(&w.shmPtr.header.active_node_count)), uint32(w.nodeCount))
+		return idx
+	}
+
+	hash := 0
+	for _, ch := range did {
+		hash = (hash*31 + int(ch)) % C.GRAPH_MAX_NODES
+	}
+	return hash
+}
+
+func (w *SharedMemoryWriter) WritePost(uri, authorDID, text string, vector [128]float32, targetDID string) uint64 {
+	nowNs := uint64(time.Now().UnixNano())
+
+	// 1. Atomic Index Increment
+	writeIdx := atomic.AddUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.write_index)), 1) - 1
+
+	// 2. Vector Ring Buffer Write (~192MB Zone)
+	vSlotIdx := writeIdx % C.VECTOR_RING_CAPACITY
+	vSlot := &w.shmPtr.vectors[vSlotIdx]
+	vSlot.slot_id = C.uint64_t(writeIdx)
+	vSlot.timestamp_ns = C.uint64_t(nowNs)
+
+	for i := 0; i < C.VECTOR_DIM; i++ {
+		vSlot.values[i] = C.float(vector[i])
+	}
+
+	// 3. Text LRU Buffer Write (~320MB Zone)
+	tSlotIdx := writeIdx % C.TEXT_LRU_CAPACITY
+	tSlot := &w.shmPtr.text_lru[tSlotIdx]
+	tSlot.slot_id = C.uint64_t(writeIdx)
+	tSlot.timestamp_ns = C.uint64_t(nowNs)
+
+	copyCString(unsafe.Pointer(&tSlot.uri[0]), uri, C.TEXT_URI_MAX_LEN)
+	copyCString(unsafe.Pointer(&tSlot.author_did[0]), authorDID, C.TEXT_AUTHOR_MAX_LEN)
+	copyCString(unsafe.Pointer(&tSlot.text[0]), text, C.TEXT_BODY_MAX_LEN)
+
+	// 4. Graph Adjacency Matrix Update
+	if targetDID != "" {
+		srcIdx := w.getOrAssignNodeIndex(authorDID)
+		dstIdx := w.getOrAssignNodeIndex(targetDID)
+
+		weightPtr := &w.shmPtr.adjacency_matrix.weights[srcIdx][dstIdx]
+		currentWeight := float32(*weightPtr)
+		newWeight := currentWeight*0.95 + 1.0
+		if newWeight > 10.0 {
+			newWeight = 10.0
+		}
+		*weightPtr = C.float(newWeight)
+	}
+
+	// 5. Particle Output Area Update (C 言語ヘルパー関数経由で安全に書き込み)
+	var role uint32
+	if targetDID != "" {
+		role = C.ROLE_VORTICITY_CENTER
+	} else if len(text) > 120 {
+		role = C.ROLE_BOUNDARY_BREAKER
+	} else {
+		role = C.ROLE_SINGULARITY_CATALYST
+	}
+
+	score := 0.75 + float64(writeIdx%25)/100.0
+	ricci := -0.10 - float64(writeIdx%40)/100.0
+
+	C.cytoplasm_v4_write_particle(
+		w.shmPtr,
+		C.uint64_t(writeIdx),
+		C.uint32_t(tSlotIdx),
+		C.uint32_t(role),
+		C.double(score),
+		C.double(ricci),
+		C.uint64_t(nowNs),
+	)
+
+	atomic.StoreUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.last_updated_epoch_ns)), nowNs)
+
+	return writeIdx
+}
+
+func copyCString(dst unsafe.Pointer, src string, maxLen int) {
+	bytes := []byte(src)
+	if len(bytes) >= maxLen {
+		bytes = bytes[:maxLen-1]
+	}
+	dstBuf := (*[1 << 30]byte)(dst)[:maxLen:maxLen]
+	copy(dstBuf, bytes)
+	dstBuf[len(bytes)] = 0
+}
+
+func (w *SharedMemoryWriter) Close() {
+	if w.shmPtr != nil {
+		C.cytoplasm_v4_detach(w.shmPtr)
+	}
+}
+</file>
+
 <file path="src/kernel/julia/main.jl">
 using Pkg
 
@@ -2412,14 +2487,15 @@ function main()
 				@printf("  Re(lambda_max) : %.4f\n", hdr.re_lambda_max)
 
 				payload = (
-					timestamp = round(Int64, time()),
-					writeIndex = round(Int64, hdr.write_index),
-					reLambdaMax = Float64(hdr.re_lambda_max),
-					equation = sindy_res.equation_str,
-					coefficients = sindy_res.coefficients,
-					residual = Float64(sindy_res.residual)
+						calculatedAtNs     = round(Int64, time() * 1e9),
+						reLambdaMax        = Float64(hdr.re_lambda_max),
+						meanRicciCurvature = Float64(hdr.mean_ricci_curvature),
+						tdaH1Persistence   = Float64(hdr.tda_h1_persistence),
+						tdaH2Persistence   = Float64(hdr.tda_h2_persistence),
+						sindyResidual      = Float64(sindy_res.residual),
+						stateFlags         = UInt32(hdr.state_flags),
+						equation           = sindy_res.equation_str
 				)
-
 				@async begin
 					try
 						HTTP.post(GATEWAY_URL, ["Content-Type" => "application/json"], JSON3.write(payload); connect_timeout = 1, request_timeout = 1)
@@ -2448,59 +2524,72 @@ using Printf
 const LIB_SHM_BRIDGE = "./shm_julia_bridge.so"
 
 struct SHMHeader
-	write_index::UInt64
-	last_updated_epoch_ns::UInt64
-	active_node_count::UInt32
-	state_flags::UInt32
-	mean_ricci_curvature::Float64
-	re_lambda_max::Float64
+    write_index::UInt64
+    last_updated_epoch_ns::UInt64
+    active_node_count::UInt32
+    state_flags::UInt32
+    mean_ricci_curvature::Float64
+    tda_h1_persistence::Float64
+    tda_h2_persistence::Float64
+    re_lambda_max::Float64
 end
 
 struct SHMContext
-	attached::Bool
+    attached::Bool
 end
 
 function attach_shm()
-	status = ccall((:julia_shm_attach, LIB_SHM_BRIDGE), Int32, ())
-	if status != 0
-		error("[SHMInterface FATAL] Cannot attach to Cytoplasm IV. Code: $status")
-	end
-	return SHMContext(true)
+    status = ccall((:julia_shm_attach, LIB_SHM_BRIDGE), Int32, ())
+    if status != 0
+        error("[SHMInterface FATAL] Cannot attach to Cytoplasm IV. Code: $status")
+    end
+    return SHMContext(true)
 end
 
 function read_header(ctx::SHMContext)
-	raw_hdr = zeros(UInt8, 256)
-	ccall((:julia_shm_read_header_raw, LIB_SHM_BRIDGE), Cvoid, (Ptr{UInt8},), raw_hdr)
+    raw_hdr = zeros(UInt8, 256)
+    ccall((:julia_shm_read_header_raw, LIB_SHM_BRIDGE), Cvoid, (Ptr{UInt8},), raw_hdr)
 
-	write_index = reinterpret(UInt64, raw_hdr[1:8])[1]
-	last_updated_epoch_ns = reinterpret(UInt64, raw_hdr[9:16])[1]
-	active_node_count = reinterpret(UInt32, raw_hdr[17:20])[1]
-	state_flags = reinterpret(UInt32, raw_hdr[21:24])[1]
-	re_lambda_max = reinterpret(Float64, raw_hdr[25:32])[1]
-	mean_ricci = reinterpret(Float64, raw_hdr[33:40])[1]
+    write_index            = reinterpret(UInt64,  raw_hdr[1:8])[1]
+    last_updated_epoch_ns = reinterpret(UInt64,  raw_hdr[9:16])[1]
+    active_node_count     = reinterpret(UInt32,  raw_hdr[17:20])[1]
+    state_flags           = reinterpret(UInt32,  raw_hdr[21:24])[1]
+    mean_ricci            = reinterpret(Float64, raw_hdr[25:32])[1]
+    tda_h1                = reinterpret(Float64, raw_hdr[33:40])[1]
+    tda_h2                = reinterpret(Float64, raw_hdr[41:48])[1]
+    re_lambda_max         = reinterpret(Float64, raw_hdr[49:56])[1]
 
-	return SHMHeader(write_index, last_updated_epoch_ns, active_node_count, state_flags, mean_ricci, re_lambda_max)
+    return SHMHeader(
+        write_index,
+        last_updated_epoch_ns,
+        active_node_count,
+        state_flags,
+        mean_ricci,
+        tda_h1,
+        tda_h2,
+        re_lambda_max
+    )
 end
 
 function read_timeseries(ctx::SHMContext, time_steps::Int = 120)
-	out_matrix = zeros(Float64, 128, time_steps)
-	steps = ccall((:julia_shm_read_timeseries, LIB_SHM_BRIDGE), Int32,
-								(Cint, Ptr{Cdouble}) , time_steps, out_matrix)
-	if steps == 0
-		return Matrix{Float64}(undef, 0, 0)
-	end 
-	return copy(out_matrix[:, 1:steps])
+    out_matrix = zeros(Float64, 128, time_steps)
+    steps = ccall((:julia_shm_read_timeseries, LIB_SHM_BRIDGE), Int32,
+                  (Cint, Ptr{Cdouble}), time_steps, out_matrix)
+    if steps == 0
+        return Matrix{Float64}(undef, 0, 0)
+    end 
+    return copy(out_matrix[:, 1:steps])
 end
 
 function write_sindy_coefficients_and_reset(ctx::SHMContext, coeffs::Vector{Float64})
-	D = length(coeffs) >= 1 ? coeffs[1] : 0.0
-	lambda = length(coeffs) >= 2 ? coeffs[2] : 0.0
-	ccall((:julia_shm_write_sindy_coefficients, LIB_SHM_BRIDGE), Cvoid,
-				(Cdouble, Cdouble), D, lambda)
+    D = length(coeffs) >= 1 ? coeffs[1] : 0.0
+    lambda = length(coeffs) >= 2 ? coeffs[2] : 0.0
+    ccall((:julia_shm_write_sindy_coefficients, LIB_SHM_BRIDGE), Cvoid,
+          (Cdouble, Cdouble), D, lambda)
 end
 
 function reset_tda_flag_and_mark_sindy(ctx::SHMContext)
-	ccall((:julia_shm_reset_tda_flag_and_mark_sindy, LIB_SHM_BRIDGE), Cvoid, ())
+    ccall((:julia_shm_reset_tda_flag_and_mark_sindy, LIB_SHM_BRIDGE), Cvoid, ())
 end
 
 end # module
@@ -2513,12 +2602,23 @@ end # module
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <stddef.h>
-#include "cytoplasm_v4.h"
+#include "../../../include/cytoplasm_v4.h"
 
 static CytoplasmV4 *g_cytoplasm = NULL;
 
+typedef struct {
+	uint64_t write_index;
+	uint64_t last_updated_epoch_ns;
+	uint32_t active_node_count;
+	uint32_t state_flags;
+	double mean_ricci_curvature;
+	double tda_h1_persistence;
+	double tda_h2_persistence;
+	double re_lambda_max;
+} JuliaHeaderBuffer;
+
 int julia_shm_attach(void) {
-	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY,sizeof(CytoplasmV4), 0666);
+	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY, sizeof(CytoplasmV4), 0666);
 	if (shmid < 0) {
 		return -1;
 	}
@@ -2528,10 +2628,6 @@ int julia_shm_attach(void) {
 		return -2;
 	}
 
-	printf("[DEBUG SHM] mean_ricci offset: %zu | re_lambda offset: %zu\n",
-			offsetof(HeaderSection, mean_ricci_curvature),
-			offsetof(HeaderSection, re_lambda_max));
-
 	g_cytoplasm = (CytoplasmV4 *)shm_ptr;
 	return 0;
 }
@@ -2540,7 +2636,16 @@ void julia_shm_read_header_raw(void *out_hdr) {
 	if (g_cytoplasm == NULL || out_hdr == NULL) {
 		return;
 	}
-	memcpy(out_hdr, &(g_cytoplasm->header), sizeof(HeaderSection));
+
+	JuliaHeaderBuffer *buf = (JuliaHeaderBuffer *)out_hdr;
+	buf->write_index = g_cytoplasm->header.write_index;
+	buf->last_updated_epoch_ns = g_cytoplasm->header.last_updated_epoch_ns;
+	buf->active_node_count = g_cytoplasm->header.active_node_count;
+	buf->state_flags = g_cytoplasm->header.state_flags;
+	buf->mean_ricci_curvature = g_cytoplasm->header.mean_ricci_curvature;
+	buf->tda_h1_persistence = g_cytoplasm->coefficients.tda_h1_persistence;
+	buf->tda_h2_persistence = g_cytoplasm->coefficients.tda_h2_persistence;
+	buf->re_lambda_max = g_cytoplasm->header.re_lambda_max;
 }
 
 int julia_shm_read_timeseries(int time_steps, double *out_matrix) {

@@ -38,27 +38,38 @@ export const useAutopoieticStream = () => {
 		socket.onmessage = (msg) => {
 			try {
 				const data = JSON.parse(msg.data);
-				const m = data.metrics || data.Metrics;
+				const m = data.metrics || data.Metrics || data;
+
 				if (m) {
+					// snake_case, camelCase, PascalCase の全パターンに対応
+					const meanRicci = m.meanRicciCurvature ?? m.mean_ricci_curvature ?? m.MeanRicciCurvature ?? 0;
+					const h1 = m.tdaH1Persistence ?? m.tda_h1_persistence ?? m.TdaH1Persistence ?? 0;
+					const h2 = m.tdaH2Persistence ?? m.tda_h2_persistence ?? m.TdaH2Persistence ?? 0;
+					const reLambda = m.reLambdaMax ?? m.re_lambda_max ?? m.ReLambdaMax ?? -0.45;
+					const residual = m.sindyResidual ?? m.sindy_residual ?? m.SindyResidual ?? 0;
+					const flags = m.stateFlags ?? m.state_flags ?? m.StateFlags ?? 0;
+					const eq = m.equation ?? m.Equation ?? '';
+
 					setEvent({
-						writeIndex: data.spectrumId ?? data.SpectrumId,
-						stateFlags: m.stateFlags ?? m.StateFlags ?? 0,
-						reLambdaMax: m.reLambdaMax ?? m.ReLambdaMax ?? -0.45,
-						meanRicciCurvature: m.meanRicciCurvature ?? m.MeanRicciCurvature ?? 0,
-						tdaH1Persistence: m.tdaH1Persistence ?? m.TdaH1Persistence ?? 0,
-						tdaH2Persistence: m.tdaH2Persistence ?? m.TdaH2Persistence ?? 0,
-						residual: m.sindyResidual ?? m.SindyResidual ?? 0,
-						equation: m.equation ?? m.Equation ?? '',
+						writeIndex: data.spectrumId ?? data.SpectrumId ?? 0,
+						stateFlags: flags,
+						reLambdaMax: reLambda,
+						meanRicciCurvature: meanRicci,
+						tdaH1Persistence: h1,
+						tdaH2Persistence: h2,
+						residual: residual,
+						equation: eq,
 					});
 				}
-				const posts = data.triggerPosts || data.TriggerPosts;
+
+				const posts = data.triggerPosts || data.TriggerPosts || data.trigger_posts;
 				if (posts && Array.isArray(posts)) {
 					setTriggerPosts((prev) => [...posts, ...prev].slice(0, 50));
 				}
 			} catch (e) {
 				console.error('[WebSocket Parse Error]', e);
 			}
-		};
+		};	
     return () => socket.close();
   }, []);
 

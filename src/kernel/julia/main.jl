@@ -61,14 +61,15 @@ function main()
 				@printf("  Re(lambda_max) : %.4f\n", hdr.re_lambda_max)
 
 				payload = (
-					timestamp = round(Int64, time()),
-					writeIndex = round(Int64, hdr.write_index),
-					reLambdaMax = Float64(hdr.re_lambda_max),
-					equation = sindy_res.equation_str,
-					coefficients = sindy_res.coefficients,
-					residual = Float64(sindy_res.residual)
+						calculatedAtNs     = round(Int64, time() * 1e9),
+						reLambdaMax        = Float64(hdr.re_lambda_max),
+						meanRicciCurvature = Float64(hdr.mean_ricci_curvature),
+						tdaH1Persistence   = Float64(hdr.tda_h1_persistence),
+						tdaH2Persistence   = Float64(hdr.tda_h2_persistence),
+						sindyResidual      = Float64(sindy_res.residual),
+						stateFlags         = UInt32(hdr.state_flags),
+						equation           = sindy_res.equation_str
 				)
-
 				@async begin
 					try
 						HTTP.post(GATEWAY_URL, ["Content-Type" => "application/json"], JSON3.write(payload); connect_timeout = 1, request_timeout = 1)

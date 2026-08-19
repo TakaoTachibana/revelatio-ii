@@ -4,12 +4,23 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <stddef.h>
-#include "cytoplasm_v4.h"
+#include "../../../include/cytoplasm_v4.h"
 
 static CytoplasmV4 *g_cytoplasm = NULL;
 
+typedef struct {
+	uint64_t write_index;
+	uint64_t last_updated_epoch_ns;
+	uint32_t active_node_count;
+	uint32_t state_flags;
+	double mean_ricci_curvature;
+	double tda_h1_persistence;
+	double tda_h2_persistence;
+	double re_lambda_max;
+} JuliaHeaderBuffer;
+
 int julia_shm_attach(void) {
-	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY,sizeof(CytoplasmV4), 0666);
+	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY, sizeof(CytoplasmV4), 0666);
 	if (shmid < 0) {
 		return -1;
 	}
@@ -19,10 +30,6 @@ int julia_shm_attach(void) {
 		return -2;
 	}
 
-	printf("[DEBUG SHM] mean_ricci offset: %zu | re_lambda offset: %zu\n",
-			offsetof(HeaderSection, mean_ricci_curvature),
-			offsetof(HeaderSection, re_lambda_max));
-
 	g_cytoplasm = (CytoplasmV4 *)shm_ptr;
 	return 0;
 }
@@ -31,7 +38,16 @@ void julia_shm_read_header_raw(void *out_hdr) {
 	if (g_cytoplasm == NULL || out_hdr == NULL) {
 		return;
 	}
-	memcpy(out_hdr, &(g_cytoplasm->header), sizeof(HeaderSection));
+
+	JuliaHeaderBuffer *buf = (JuliaHeaderBuffer *)out_hdr;
+	buf->write_index = g_cytoplasm->header.write_index;
+	buf->last_updated_epoch_ns = g_cytoplasm->header.last_updated_epoch_ns;
+	buf->active_node_count = g_cytoplasm->header.active_node_count;
+	buf->state_flags = g_cytoplasm->header.state_flags;
+	buf->mean_ricci_curvature = g_cytoplasm->header.mean_ricci_curvature;
+	buf->tda_h1_persistence = g_cytoplasm->coefficients.tda_h1_persistence;
+	buf->tda_h2_persistence = g_cytoplasm->coefficients.tda_h2_persistence;
+	buf->re_lambda_max = g_cytoplasm->header.re_lambda_max;
 }
 
 int julia_shm_read_timeseries(int time_steps, double *out_matrix) {
@@ -80,6 +96,3 @@ void julia_shm_detach(void) {
 		g_cytoplasm = NULL;
 	}
 }
-
-
-
