@@ -86,6 +86,7 @@ src/
     package.json
     rsbuild.config.ts
 tests/
+  test_graph_sindy_pde.jl
   test_shm.c
 .gitignore
 ARCHITECUTURE.md
@@ -285,170 +286,6 @@ CREATE TABLE IF NOT EXISTS critical_trigger_posts_v2 (
     *   注入された疑似ポスト群の中から、幾何学的歪みを引き起こした正確な触媒ポスト URI が `Particle Output Area` 経由で .NET Gateway にて抽出され、MariaDB に正確な `structural_role` 分類とともに 15ms 以内に保存されることを検証。
 4.  **WebGL レンダリング & アンカー追従検証**:
     *   WebUI 上でメッシュが赤色スパイク形状に変形し、抽出された起爆ポストが 3D 空間上の特異点座標に正確にバインドされてホログラフィック表示されることを確認する。
-</file>
-
-<file path="include/cytoplasm_v4.h">
-/**
- * @file cytoplasm_v4.h
- * @brief REVELATIO II Cytoplasm IV Shared Memory Layout Specification
- * @details System V Shared Memory (Key: 0x41504550 / "APEP", Size: 512 MB)
- */
-
-#ifndef CYTOPLASM_V4_H
-#define CYTOPLASM_V4_H
-
-#include <stdint.h>
-#include <stddef.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/*=== Constant Definition === */
-
-#define CYTOPLASM_V4_IPC_KEY 0x41504550U /* "APEP" */
-#define CYTOPLASM_V4_SHM_SIZE (512U * 1024U * 1024) /* 512 MB */
-
-/* Feature Vector Configuration */
-#define VECTOR_DIM 128
-#define VECTOR_RING_CAPACITY 262144U /* ~192 MB Ring Buffer */
-
-/* Graph Topology Configuration */
-#define GRAPH_MAX_NODES 256U /* Max Active Graph Nodes */
-
-/* Text LRU Buffer Configuration */
-#define TEXT_LRU_CAPACITY 16384U /* ~320 MB LRU Buffer */
-#define TEXT_URI_MAX_LEN 256
-#define TEXT_AUTHOR_MAX_LEN 128
-#define TEXT_BODY_MAX_LEN 2048
-
-/* Particle Attribution Output Area */
-#define MAX_TOP_TRIGGER_POSTS 64U
-
-/* System State Flags */
-#define STATE_FLAG_STABLE 0x00
-#define STATE_FLAG_QUIET 0x01
-#define STATE_FLAG_PERTURBED 0x02
-#define STATE_FLAG_CRITICAL 0x04
-#define STATE_FLAG_TDA_DISRUPTION 0x08
-
-/* Structural Role Flags for Particles */
-#define ROLE_SINGULARITY_CATALYST 0x01
-#define ROLE_BOUNDARY_BREAKER 0x02
-#define ROLE_VORTICITY_CENTER 0x04
-
-#pragma pack(push, 1)
-
-/*=== 1. Header Section (256 Bytes) ===*/
-
-typedef struct {
-	uint64_t magic_number; /* 0x4150455052455634ULL ("APEPREV4") */
-	uint64_t write_index; /*Atomic global write counter */
-	uint64_t read_index; /*Global read pointer */
-	double re_lambda_max; /* Real part of max eigenvalue */
-	double mean_ricci_curvature; /* Average Ricci Curvature R_ver */
-	uint32_t state_flags; /* SYSTEM STATE FLAGS */
-	uint32_t active_node_count; /* Active nodes in graph topology */
-	uint64_t last_updated_epoch_ns; /* Timestamp (nanoseconds) */
-	uint8_t reserved[200];
-} HeaderSection;
-
-/*=== 2. Tensor Coefficient Section (1,024 Bytes) ===*/
-
-typedef struct {
-	/* Vector SINDy PDE Non-linear Coefficients (C1, C2 matrices in flattened/diagonol form) */
-	double c1_diag[VECTOR_DIM];
-	double c2_diag[VECTOR_DIM];
-	/* Anisotropic Diffusion Tensor D (Diagonal representation) */
-	double diffusion_tensor[VECTOR_DIM];
-	double residual_error;
-	double tda_h1_persistence;
-	double tda_h2_persistence;
-	uint64_t fit_timestamp_ns;
-	uint8_t reserved[160];
-} TensorCoefficientSection;
-
-/*=== 3. Particle Attribution Output Area (15,104 Bytes) ===*/
-
-typedef struct {
-	uint32_t slot_id;
-	uint32_t structural_role; /* Role flags (CATALYST / BREAKER / VORTICITY) */
-	double attribution_score; /* S_i Score */
-	double local_ricci_curvature; /* R_i Curvature */
-} TriggerParticle;
-
-typedef struct {
-	uint32_t trigger_count;
-	TriggerParticle particle[MAX_TOP_TRIGGER_POSTS];
-	uint64_t calculated_at_ns;
-	uint8_t reserved[128];
-} ParticleOutputArea;
-
-/*=== 4. Adjacency Matrix Section (262,144 Bytes) ===*/
-
-typedef struct {
-	/* 256 x 256 Dense Weight Matrix for Interaction Topology (Replay/Quote/Mention) */
-	float weights[GRAPH_MAX_NODES][GRAPH_MAX_NODES];
-} AdjacencyMatrixSection;
-
-/*=== 5. Feature Vector Slot Struct (768 Bytes per Slot) ===*/
-
-typedef struct {
-	uint64_t slot_id;
-	uint64_t timestamp_ns;
-	float values[VECTOR_DIM]; /* 128-dimentional projected feature vector */
-	uint8_t reserved[240];
-} VectorSlot;
-
-/*=== 6. Text Metadata LRU Slot Struct (20,480 Bytes per Slot) ===*/
-
-typedef struct {
-	uint64_t slot_id;
-	uint64_t timestamp_ns;
-	char uri[TEXT_URI_MAX_LEN];
-	char author_did[TEXT_AUTHOR_MAX_LEN];
-	char text[TEXT_BODY_MAX_LEN];
-	double spectral_score;
-	double local_ricci_curvature;
-	uint32_t structural_role;
-	uint8_t reserved[18012];
-} TextSlot;
-
-/*=== 7. Cytoplasm IV Full Shared Memory Structure (512 MB) ===*/
-
-typedef struct {
-	HeaderSection header; /* 0x00000000 - 256 B */
-	TensorCoefficientSection coefficients; /* 0x00000100 - 3,264 B */
-	ParticleOutputArea particles_output; /* 0x00000DC0 - 1,676 B */
-	uint8_t reserved_meta[11188]; /* 0x0000144C -> to padding 0x00004000 */
-	
-	AdjacencyMatrixSection adjacency_matrix; /* 0x00004000 - 262,144 B */
-
-	VectorSlot vectors[VECTOR_RING_CAPACITY]; /* 192 MB */
-	TextSlot text_lru[TEXT_LRU_CAPACITY]; /* 320 MB */
-} CytoplasmV4;
-
-#pragma pack(pop)
-
-/*=== Memory Layout Alignment Assertions (Compile-time Verification) ===*/
-
-#ifdef __cplusplus
-	#ifndef _Static_assert
-		#define _Static_assert static_assert
-	#endif
-#endif
-
-_Static_assert(sizeof(HeaderSection) == 256, "HeaderSection must be exactly 256 bytes");
-_Static_assert(sizeof(TensorCoefficientSection) == 3256 || sizeof(TensorCoefficientSection) == 3264, "TensorCoefficientSection layout check");
-_Static_assert(offsetof(CytoplasmV4, adjacency_matrix) == 0x4000, "Adjacency matrix offset must be exactly 0x4000 (16KB)");
-_Static_assert(sizeof(VectorSlot) == 768, "VectorSlot size must be exactly 768 bytes");
-_Static_assert(sizeof(TextSlot) == 20480, "TextSlot size must be exactly 20,480 bytes");
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* CYTOPLASM_V4_H */
 </file>
 
 <file path="src/gateway/GatewayService/CytoplasmV4Reader.cs">
@@ -793,65 +630,6 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 </file>
 
-<file path="src/kernel/julia/sindy_pde.jl">
-module SINDyPDE
-
-using LinearAlgebra
-using Statistics
-using Printf
-
-struct SINDyResult
-	equation_str::String
-	coefficients::Vector{Float64}
-	residual::Float64
-end
-
-function fit_sindy_pde(U::Matrix{Float64})
-	dim, T = size(U)
-	if T < 10
-		return SINDyResult("delu/delt = 0", [0.0, 0.0, 0.0], 0.0)
-	end
-	dt = 0.1
-	dU_dt = (U[:, 2:end] .- U[:, 1:end - 1]) ./ dt
-	
-	Laplacian_U = zeros(Float64, dim, T - 1)
-	for t in 1:T - 1
-		u_t = U[:, t]
-		lap = circshift(u_t, 1) .+ circshift(u_t, -1) .- 2.0 .* u_t
-		Laplacian_U[:, t] = lap
-	end
-
-	u_vec = vec(U[:, 1:end - 1])
-	lap_vec = vec(Laplacian_U)
-	u_cubic_vec = u_vec .^ 3
-	du_vec = vec(dU_dt)
-
-	Theta = [lap_vec u_vec u_cubic_vec]
-	Xi = Theta \ du_vec
-
-	for iter in 1:3
-		small_inds = abs.(Xi) .< 0.01
-		Xi[small_inds] .= 0.0
-		for i in 1:size(Theta, 2)
-			if !small_inds[i]
-				Xi[i] = Theta[:, i] \ du_vec
-			end
-		end
-	end
-
-	D_coeff = Xi[1]
-	lambda_coeff = Xi[2]
-	cubic_coeff = Xi[3]
-
-	res_val = norm(Theta * Xi .- du_vec) / sqrt(length(du_vec))
-	eq_str = @sprintf("delu/delt = %.4fdel^2u + %.4fu %+.4fu^3", D_coeff, lambda_coeff, cubic_coeff)
-
-	return SINDyResult(eq_str, [D_coeff, lambda_coeff, cubic_coeff], res_val)
-end
-
-end # module
-</file>
-
 <file path="src/kernel/r/test_disruption_injection.R">
 # REVELATIO II: Disruption Sensing Validation Test
 
@@ -1122,72 +900,6 @@ export const LogStreamPanel: React.FC<Props> = ({ posts }) => {
 };
 </file>
 
-<file path="src/web/src/components/TelemetryPanel.css">
-.telemetry-panel {
-  width: 32%;
-  background: var(--panel-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  backdrop-filter: blur(12px);
-  overflow-y: auto;
-}
-
-.panel-section-title {
-  font-size: 11px;
-  color: var(--text-muted);
-  letter-spacing: 0.1em;
-  border-bottom: 1px solid var(--border-color);
-  padding-bottom: 6px;
-}
-
-.pde-box {
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 12px;
-  min-height: 50px;
-  display: flex;
-  align-items: center;
-	justify-content: flex-start;
-	overflow-x: auto;
-  color: var(--color-accent);
-}
-
-.gauge-group {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.gauge-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.gauge-label-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-}
-
-.gauge-bar-bg {
-  height: 6px;
-  background: var(--border-color);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.gauge-bar-fill {
-  height: 100%;
-  transition: width 0.3s ease, background-color 0.3s ease;
-}
-</file>
-
 <file path="src/web/src/components/TelemetryPanel.tsx">
 import React, { useEffect, useRef } from 'react';
 import katex from 'katex';
@@ -1296,86 +1008,6 @@ export const TelemetryPanel: React.FC<Props> = ({
       </div>
     </aside>
   );
-};
-</file>
-
-<file path="src/web/src/hooks/useAutopoieticStream.ts">
-import { useEffect, useState } from 'react';
-
-export interface TriggerPost {
-  slotIndex: number;
-  uri: string;
-  authorDid: string;
-  text: string;
-  contributionScore: number;
-  localRicciCurvature: number;
-  structuralRole: string;
-}
-
-export interface TelemetryEvent {
-  writeIndex?: number;
-  stateFlags: number;
-  reLambdaMax: number;
-  meanRicciCurvature: number;
-  tdaH1Persistence: number;
-  tdaH2Persistence: number;
-  residual: number;
-  equation?: string;
-}
-
-export const useAutopoieticStream = () => {
-  const [connected, setConnected] = useState(false);
-  const [event, setEvent] = useState<TelemetryEvent | null>(null);
-  const [triggerPosts, setTriggerPosts] = useState<TriggerPost[]>([]);
-
-  useEffect(() => {
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.hostname}:5000/ws/topology`;
-    const socket = new WebSocket(wsUrl);
-
-    socket.onopen = () => setConnected(true);
-    socket.onclose = () => setConnected(false);
-    socket.onerror = () => setConnected(false);
-
-		socket.onmessage = (msg) => {
-			try {
-				const data = JSON.parse(msg.data);
-				const m = data.metrics || data.Metrics || data;
-
-				if (m) {
-					// snake_case, camelCase, PascalCase の全パターンに対応
-					const meanRicci = m.meanRicciCurvature ?? m.mean_ricci_curvature ?? m.MeanRicciCurvature ?? 0;
-					const h1 = m.tdaH1Persistence ?? m.tda_h1_persistence ?? m.TdaH1Persistence ?? 0;
-					const h2 = m.tdaH2Persistence ?? m.tda_h2_persistence ?? m.TdaH2Persistence ?? 0;
-					const reLambda = m.reLambdaMax ?? m.re_lambda_max ?? m.ReLambdaMax ?? -0.45;
-					const residual = m.sindyResidual ?? m.sindy_residual ?? m.SindyResidual ?? 0;
-					const flags = m.stateFlags ?? m.state_flags ?? m.StateFlags ?? 0;
-					const eq = m.equation ?? m.Equation ?? '';
-
-					setEvent({
-						writeIndex: data.spectrumId ?? data.SpectrumId ?? 0,
-						stateFlags: flags,
-						reLambdaMax: reLambda,
-						meanRicciCurvature: meanRicci,
-						tdaH1Persistence: h1,
-						tdaH2Persistence: h2,
-						residual: residual,
-						equation: eq,
-					});
-				}
-
-				const posts = data.triggerPosts || data.TriggerPosts || data.trigger_posts;
-				if (posts && Array.isArray(posts)) {
-					setTriggerPosts((prev) => [...posts, ...prev].slice(0, 50));
-				}
-			} catch (e) {
-				console.error('[WebSocket Parse Error]', e);
-			}
-		};	
-    return () => socket.close();
-  }, []);
-
-  return { connected, event, triggerPosts };
 };
 </file>
 
@@ -1514,6 +1146,78 @@ export default defineConfig({
     title: 'REVELATIO II // Autopoietic Telemetry Control',
   },
 });
+</file>
+
+<file path="tests/test_graph_sindy_pde.jl">
+using Random
+using LinearAlgebra
+using Statistics
+
+include("../src/kernel/julia/sindy_pde.jl")
+
+using .SINDyPDE
+
+Random.seed!(42)
+
+N = 12
+D = 16
+T = 600
+dt = 0.002
+
+A = zeros(Float64, N, N)
+
+for i in 1:N
+	j = i == N ? 1 : i + 1
+	A[i, j] = 1.0
+	A[j, i] = 1.0
+end
+
+L = SINDyPDE.graph_laplacian(A)
+
+C0_TRUE = 0.0
+C1_TRUE = 0.25
+C2_TRUE = 0.0
+C3_TRUE = -0.10
+D_TRUE = 0.08
+
+U = zeros(Float64, N, D, T)
+U[:, :, 1] .= 0.5 .* randn(N, D)
+
+for t in 1:T - 1
+	current = U[:, :, t]
+	LU = L * current
+	rhs = C0_TRUE .+ C1_TRUE .* current .+ C2_TRUE.* current .^ 2 .+ C3_TRUE .* current .^ 3 .- D_TRUE .* LU
+	U[:, :, t + 1] .= current .+ dt .* rhs
+end
+
+result = SINDyPDE.fit_graph_sindy_pde(U, A, dt; lambda=1e-6, max_iter=20)
+Xi = result.coefficients
+c0_est = median(Xi[1, :])
+c1_est = median(Xi[2, :])
+c2_est = median(Xi[3, :])
+c3_est = median(Xi[4, :])
+d_est = median(Xi[5, :])
+
+println()
+println("=== Graph SINDy-PDE synthetic test ===")
+println("c0 true = ", C0_TRUE, " estimated = ", c0_est)
+println("c1 true = ", C1_TRUE, " estimated = ", c1_est)
+println("c2 true = ", C2_TRUE, " estimated = ", c2_est)
+println("c3 true = ", C3_TRUE, " estimated = ", c3_est)
+println("D  true = ", D_TRUE, " estimated = ", d_est)
+println("RMSE = ", result.residual)
+println("Relative residual = ", result.relative_residual)
+println("Active terms = ", result.active_terms)
+
+@assert abs(c0_est - C0_TRUE) < 0.03
+@assert abs(c1_est - C1_TRUE) < 0.03
+@assert abs(c2_est - C2_TRUE) < 0.03
+@assert abs(c3_est - C3_TRUE) < 0.03
+@assert abs(d_est - D_TRUE) < 0.03
+@assert result.relative_residual < 0.10
+
+println()
+println("PASS: governing Graph PDE recovered.")
 </file>
 
 <file path="tests/test_shm.c">
@@ -1855,167 +1559,186 @@ REVELATIO II は、Bluesky のリアルタイムストリームを 128 次元特
 詳細なシステム構成、数式、共有メモリ領域マップについては [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) を参照してください。
 </file>
 
-<file path="src/gateway/GatewayService/Program.cs">
-using System.Collections.Concurrent;
-using System.Net.WebSockets;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using Dapper;
-using GatewayService.Services;
-using MySqlConnector;
+<file path="include/cytoplasm_v4.h">
+/**
+ * @file cytoplasm_v4.h
+ * @brief REVELATIO II Cytoplasm IV Shared Memory Layout Specification
+ * @details System V Shared Memory (Key: 0x41504550 / "APEP", Size: 512 MB)
+ */
 
-var builder = WebApplication.CreateBuilder(args);
+#ifndef CYTOPLASM_V4_H
+#define CYTOPLASM_V4_H
 
-builder.Services.AddSingleton<CytoplasmV4Reader>();
+#include <stdint.h>
+#include <stddef.h>
 
-// HTTP JSON のバインド設定（snake_case も camelCase もケースインセンシティブで柔軟受取）
-builder.Services.ConfigureHttpJsonOptions(options => {
-    options.SerializerOptions.PropertyNameCaseInsensitive = true;
-    options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-});
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-var app = builder.Build();
+/*=== Constant Definition === */
 
-app.UseWebSockets();
-var wsClients = new ConcurrentBag<WebSocket>();
+#define CYTOPLASM_V4_IPC_KEY 0x41504550U /* "APEP" */
+#define CYTOPLASM_V4_SHM_SIZE (512U * 1024U * 1024) /* 512 MB */
 
-app.MapPost("/api/v1/topology/event", async (TopologyEventRequest request, CytoplasmV4Reader reader, IConfiguration config) => {
-		Console.WriteLine($"[Gateway Recived] Ricce: {request.MeanRicciCurvature}, ReLambda: {request.ReLambdaMax}, H1: {request.TdaH1Persistence}");
+/* Feature Vector Configuration */
+#define VECTOR_DIM 128
+#define VECTOR_RING_CAPACITY 262144U /* ~192 MB Ring Buffer */
 
-		var triggerPosts = reader.ReadTopTriggerPosts();
-		Console.WriteLine($"[Gateway Trigger Check] Trigger Count: {triggerPosts.Count}");
+/* Graph Topology Configuration */
+#define GRAPH_MAX_NODES 256U /* Max Active Graph Nodes */
 
-		if (triggerPosts.Count == 0) {
-				triggerPosts.Add(new TriggerPostDto(
-						1,
-						"at://did:plc:test/app.bsky.feed.post/123",
-						"did:plc:revelatio_demo",
-						"【幾何学的特異点検知】言論空間の局所曲率が臨界面に達しました。",
-						0.9852,
-						-0.8921,
-						"SINGULARITY_CATALYST"
-				));
-		}
+/* Text LRU Buffer Configuration */
+#define TEXT_LRU_CAPACITY 16370U /* ~320 MB LRU Buffer */
+#define TEXT_URI_MAX_LEN 256
+#define TEXT_AUTHOR_MAX_LEN 128
+#define TEXT_BODY_MAX_LEN 2048
 
-    string dbConnStr = config.GetConnectionString("MariaDB")
-        ?? "Server=localhost;Database=revelatio_db;Uid=root;Pwd=password;";
+/* Particle Attribution Output Area */
+#define MAX_TOP_TRIGGER_POSTS 64U
 
-    long spectrumId = 0;
+/* System State Flags */
+#define STATE_FLAG_STABLE 0x00U
+#define STATE_FLAG_QUIET 0x01U
+#define STATE_FLAG_PERTURBED 0x02U
+#define STATE_FLAG_CRITICAL 0x04U
+#define STATE_FLAG_TDA_DISRUPTION 0x08U
 
-    await using (var conn = new MySqlConnection(dbConnStr)) {
-        await conn.OpenAsync();
-        await using var tx = await conn.BeginTransactionAsync();
+/* Structural Role Flags for Particles */
+#define ROLE_SINGULARITY_CATALYST 0x01U
+#define ROLE_BOUNDARY_BREAKER 0x02U
+#define ROLE_VORTICITY_CENTER 0x04U
 
-        try {
-            const string sqlSpectrum = @"
-                INSERT INTO spectrum_history_v2
-                (calculated_at_ns, re_lambda_max, mean_ricci_curvature, tda_h1_persistence, tda_h2_persistence, sindy_residual, state_flags)
-                VALUES (@CalculatedAtNs, @ReLambdaMax, @MeanRicciCurvature, @TdaH1Persistence, @TdaH2Persistence, @SindyResidual, @StateFlags);
-                SELECT LAST_INSERT_ID()";
+#pragma pack(push, 1)
 
-            spectrumId = await conn.ExecuteScalarAsync<long>(sqlSpectrum, new {
-                CalculatedAtNs = request.CalculatedAtNs,
-                ReLambdaMax = request.ReLambdaMax,
-                MeanRicciCurvature = request.MeanRicciCurvature,
-                TdaH1Persistence = request.TdaH1Persistence,
-                TdaH2Persistence = request.TdaH2Persistence,
-                SindyResidual = request.SindyResidual,
-                StateFlags = request.StateFlags
-            }, tx);
+/*=== 1. Header Section (256 Bytes) ===*/
 
-            if (triggerPosts.Count > 0) {
-                const string sqlPosts = @"
-                    INSERT INTO critical_trigger_posts_v2
-                    (spectrum_id, slot_index, post_uri, author_did, post_text, contribution_score, local_ricci_curvature, structural_role)
-                    VALUES (@SpectrumId, @SlotIndex, @Uri, @AuthorDid, @Text, @ContributionScore, @LocalRicciCurvature, @StructuralRole);";
+typedef struct {
+	uint64_t magic_number; /* 0x4150455052455634ULL ("APEPREV4") */
+	uint64_t write_index; /*Atomic global write counter */
+	uint64_t read_index; /*Global read pointer */
+	double re_lambda_max; /* Real part of max eigenvalue */
+	double mean_ricci_curvature; /* Average Ricci Curvature R_ver */
+	uint32_t state_flags; /* SYSTEM STATE FLAGS */
+	uint32_t active_node_count; /* Active nodes in graph topology */
+	uint64_t last_updated_epoch_ns; /* Timestamp (nanoseconds) */
+	uint8_t reserved[200];
+} HeaderSection;
 
-                var postEntities = triggerPosts.Select(p => new {
-                    SpectrumId = spectrumId,
-                    SlotIndex = p.SlotIndex,
-                    Uri = p.Uri,
-                    AuthorDid = p.AuthorDid,
-                    Text = p.Text,
-                    ContributionScore = p.ContributionScore,
-                    LocalRicciCurvature = p.LocalRicciCurvature,
-                    StructuralRole = p.StructuralRole
-                });
+/*=== 2. Tensor Coefficient Section (1,024 Bytes) ===*/
 
-                await conn.ExecuteAsync(sqlPosts, postEntities, tx);
-            }
+typedef struct {
+	/* Vector SINDy PDE Non-linear Coefficients (C1, C2 matrices in flattened/diagonol form) */
+	double c1_diag[VECTOR_DIM];
+	double c2_diag[VECTOR_DIM];
+	/* Anisotropic Diffusion Tensor D (Diagonal representation) */
+	double diffusion_tensor[VECTOR_DIM];
+	double residual_error;
+	double tda_h1_persistence;
+	double tda_h2_persistence;
+	uint64_t fit_timestamp_ns;
+	uint8_t reserved[160];
+} TensorCoefficientSection;
 
-            await tx.CommitAsync();
-        } catch (Exception ex) {
-            await tx.RollbackAsync();
-            Console.WriteLine($"[DB Error] Transaction failed: {ex.Message}");
-            return Results.Problem("Database persistence failed.", statusCode: 500);
-        }
-    }
+/*=== 3. Particle Attribution Output Area (1,676 Bytes) ===*/
 
-    var jsonOptions = new JsonSerializerOptions {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true
-    };
+typedef struct {
+	uint32_t slot_id;
+	uint32_t structural_role; /* Role flags (CATALYST / BREAKER / VORTICITY) */
+	double attribution_score; /* S_i Score */
+	double local_ricci_curvature; /* R_i Curvature */
+} TriggerParticle;
 
-    // 引数に jsonOptions を渡して camelCase 化を強制
-    var payload = JsonSerializer.Serialize(new {
-        spectrumId,
-        metrics = request,
-        triggerPosts
-    }, jsonOptions);
+typedef struct {
+	uint32_t trigger_count;
+	TriggerParticle particle[MAX_TOP_TRIGGER_POSTS];
+	uint64_t calculated_at_ns;
+	uint8_t reserved[128];
+} ParticleOutputArea;
 
-    byte[] bytes = Encoding.UTF8.GetBytes(payload);
-    var deadSockets = new List<WebSocket>();
+typedef struct {
+	uint8_t alignment_pad[4];
+	double c0_diag[VECTOR_DIM];
+	double c3_diag[VECTOR_DIM];
+	double relative_residual;
+	uint64_t model_generation;
+	uint64_t fit_timestamp_ns;
+	uint32_t schema_version;
+	uint32_t active_term_mask;
+	uint8_t reserved[92];
+} SINDyExtendedSection;
 
-    foreach (var socket in wsClients) {
-        if (socket.State == WebSocketState.Open) {
-            _ = socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
-        } else {
-            deadSockets.Add(socket);
-        }
-    }
+/*=== 4. Adjacency Matrix Section (262,144 Bytes) ===*/
 
-    foreach (var dead in deadSockets) {
-        wsClients.TryTake(out _);
-    }
+typedef struct {
+	/* 256 x 256 Dense Weight Matrix for Interaction Topology (Replay/Quote/Mention) */
+	float weights[GRAPH_MAX_NODES][GRAPH_MAX_NODES];
+} AdjacencyMatrixSection;
 
-    return Results.Ok(new { status = "ACCEPTED", spectrumId, particleCount = triggerPosts.Count });
-});
+/*=== 5. Feature Vector Slot Struct (768 Bytes per Slot) ===*/
 
-app.Map("/ws/topology", async (HttpContext context) => {
-    if (context.WebSockets.IsWebSocketRequest) {
-        using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-        wsClients.Add(webSocket);
-        Console.WriteLine($"[WebSocket] Client connected. Total active: {wsClients.Count}");
+typedef struct {
+	uint64_t slot_id;
+	uint64_t timestamp_ns;
+	uint32_t node_index;
+	uint32_t flags;
+	float values[VECTOR_DIM]; /* 128-dimentional projected feature vector */
+	uint8_t reserved[232];
+} VectorSlot;
 
-        var buffer = new byte[1024];
-        while (webSocket.State == WebSocketState.Open) {
-            var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-            if (result.MessageType == WebSocketMessageType.Close) {
-                break;
-            }
-        }
+/*=== 6. Text Metadata LRU Slot Struct (20,480 Bytes per Slot) ===*/
 
-        wsClients.TryTake(out _);
-        Console.WriteLine("[WebSocket] Client disconnected.");
-    } else {
-        context.Response.StatusCode = StatusCodes.Status400BadRequest;
-    }
-});
+typedef struct {
+	uint64_t slot_id;
+	uint64_t timestamp_ns;
+	char uri[TEXT_URI_MAX_LEN];
+	char author_did[TEXT_AUTHOR_MAX_LEN];
+	char text[TEXT_BODY_MAX_LEN];
+	double spectral_score;
+	double local_ricci_curvature;
+	uint32_t structural_role;
+	uint8_t reserved[18012];
+} TextSlot;
 
-app.Run();
+/*=== 7. Cytoplasm IV Full Shared Memory Structure (512 MB) ===*/
 
-// DTO: 属性を外し C# / Minimal API の柔軟ケースバインドに任せる
-public record TopologyEventRequest(
-    long CalculatedAtNs,
-    double ReLambdaMax,
-    double MeanRicciCurvature,
-    double TdaH1Persistence,
-    double TdaH2Persistence,
-    double SindyResidual,
-    uint StateFlags,
-    string? Equation
-);
+typedef struct {
+	HeaderSection header; 
+	TensorCoefficientSection coefficients; 
+	ParticleOutputArea particles_output; 
+	SINDyExtendedSection sindy_extended;
+	uint8_t reserved_meta[9012];
+	
+	AdjacencyMatrixSection adjacency_matrix; 
+
+	VectorSlot vectors[VECTOR_RING_CAPACITY]; 
+	TextSlot text_lru[TEXT_LRU_CAPACITY]; 
+} CytoplasmV4;
+
+#pragma pack(pop)
+
+/*=== Memory Layout Alignment Assertions (Compile-time Verification) ===*/
+
+#ifdef __cplusplus
+	#ifndef _Static_assert
+		#define _Static_assert static_assert
+	#endif
+#endif
+
+_Static_assert(sizeof(HeaderSection) == 256, "HeaderSection must be exactly 256 bytes");
+_Static_assert(sizeof(TensorCoefficientSection) == 3264, "TensorCoefficientSection layout check");
+_Static_assert(sizeof(SINDyExtendedSection) == 2176, "SINDyExtendedSection must be 2176 bytes");
+_Static_assert(offsetof(CytoplasmV4, sindy_extended) == 0x144C, "SINDy extended offset mismatch");
+_Static_assert(offsetof(CytoplasmV4, adjacency_matrix) == 0x4000, "Adjacency matrix offset must be exactly 0x4000 (16KB)");
+_Static_assert(sizeof(VectorSlot) == 768, "VectorSlot size must be exactly 768 bytes");
+_Static_assert(sizeof(TextSlot) == 20480, "TextSlot size must be exactly 20,480 bytes");
+_Static_assert(sizeof(CytoplasmV4) <= CYTOPLASM_V4_SHM_SIZE, "CytoplasmV4 exceeds 512 Mib shared memory size");
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* CYTOPLASM_V4_H */
 </file>
 
 <file path="src/ingester/main.go">
@@ -2272,428 +1995,248 @@ void cytoplasm_v4_write_particle(CytoplasmV4 *cytoplasm, uint64_t write_idx, uin
 }
 </file>
 
-<file path="src/ingester/shm_writer.go">
-package main
+<file path="src/kernel/julia/sindy_pde.jl">
+module SINDyPDE
 
-/*
-#cgo CPPFLAGS: -I${SRCDIR}/../../include
-#include "cytoplasm_v4.h"
-
-CytoplasmV4* cytoplasm_v4_attach(int *shmid_out);
-int cytoplasm_v4_detach(CytoplasmV4 *cytoplasm);
-void cytoplasm_v4_write_particle(CytoplasmV4 *cytoplasm, uint64_t write_idx, uint32_t slot_id, uint32_t role, double score, double ricci, uint64_t now_ns);
-*/
-import "C"
-
-import (
-	"fmt"
-	"sync"
-	"sync/atomic"
-	"time"
-	"unsafe"
-)
-
-type SharedMemoryWriter struct {
-	shmPtr    *C.CytoplasmV4
-	shmID     C.int
-	nodeMap   map[string]int
-	nodeCount int
-	mu        sync.Mutex
-}
-
-func NewSharedMemoryWriter() (*SharedMemoryWriter, error) {
-	var shmID C.int
-	ptr := C.cytoplasm_v4_attach(&shmID)
-	if ptr == nil {
-		return nil, fmt.Errorf("failed to attach to Cytoplasm IV 512MB shared memory")
-	}
-
-	return &SharedMemoryWriter{
-		shmPtr:  ptr,
-		shmID:   shmID,
-		nodeMap: make(map[string]int),
-	}, nil
-}
-
-func (w *SharedMemoryWriter) getOrAssignNodeIndex(did string) int {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if idx, exists := w.nodeMap[did]; exists {
-		return idx
-	}
-
-	if w.nodeCount < C.GRAPH_MAX_NODES {
-		idx := w.nodeCount
-		w.nodeMap[did] = idx
-		w.nodeCount++
-		atomic.StoreUint32((*uint32)(unsafe.Pointer(&w.shmPtr.header.active_node_count)), uint32(w.nodeCount))
-		return idx
-	}
-
-	hash := 0
-	for _, ch := range did {
-		hash = (hash*31 + int(ch)) % C.GRAPH_MAX_NODES
-	}
-	return hash
-}
-
-func (w *SharedMemoryWriter) WritePost(uri, authorDID, text string, vector [128]float32, targetDID string) uint64 {
-	nowNs := uint64(time.Now().UnixNano())
-
-	// 1. Atomic Index Increment
-	writeIdx := atomic.AddUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.write_index)), 1) - 1
-
-	// 2. Vector Ring Buffer Write (~192MB Zone)
-	vSlotIdx := writeIdx % C.VECTOR_RING_CAPACITY
-	vSlot := &w.shmPtr.vectors[vSlotIdx]
-	vSlot.slot_id = C.uint64_t(writeIdx)
-	vSlot.timestamp_ns = C.uint64_t(nowNs)
-
-	for i := 0; i < C.VECTOR_DIM; i++ {
-		vSlot.values[i] = C.float(vector[i])
-	}
-
-	// 3. Text LRU Buffer Write (~320MB Zone)
-	tSlotIdx := writeIdx % C.TEXT_LRU_CAPACITY
-	tSlot := &w.shmPtr.text_lru[tSlotIdx]
-	tSlot.slot_id = C.uint64_t(writeIdx)
-	tSlot.timestamp_ns = C.uint64_t(nowNs)
-
-	copyCString(unsafe.Pointer(&tSlot.uri[0]), uri, C.TEXT_URI_MAX_LEN)
-	copyCString(unsafe.Pointer(&tSlot.author_did[0]), authorDID, C.TEXT_AUTHOR_MAX_LEN)
-	copyCString(unsafe.Pointer(&tSlot.text[0]), text, C.TEXT_BODY_MAX_LEN)
-
-	// 4. Graph Adjacency Matrix Update
-	if targetDID != "" {
-		srcIdx := w.getOrAssignNodeIndex(authorDID)
-		dstIdx := w.getOrAssignNodeIndex(targetDID)
-
-		weightPtr := &w.shmPtr.adjacency_matrix.weights[srcIdx][dstIdx]
-		currentWeight := float32(*weightPtr)
-		newWeight := currentWeight*0.95 + 1.0
-		if newWeight > 10.0 {
-			newWeight = 10.0
-		}
-		*weightPtr = C.float(newWeight)
-	}
-
-	// 5. Particle Output Area Update (C 言語ヘルパー関数経由で安全に書き込み)
-	var role uint32
-	if targetDID != "" {
-		role = C.ROLE_VORTICITY_CENTER
-	} else if len(text) > 120 {
-		role = C.ROLE_BOUNDARY_BREAKER
-	} else {
-		role = C.ROLE_SINGULARITY_CATALYST
-	}
-
-	score := 0.75 + float64(writeIdx%25)/100.0
-	ricci := -0.10 - float64(writeIdx%40)/100.0
-
-	C.cytoplasm_v4_write_particle(
-		w.shmPtr,
-		C.uint64_t(writeIdx),
-		C.uint32_t(tSlotIdx),
-		C.uint32_t(role),
-		C.double(score),
-		C.double(ricci),
-		C.uint64_t(nowNs),
-	)
-
-	atomic.StoreUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.last_updated_epoch_ns)), nowNs)
-
-	return writeIdx
-}
-
-func copyCString(dst unsafe.Pointer, src string, maxLen int) {
-	bytes := []byte(src)
-	if len(bytes) >= maxLen {
-		bytes = bytes[:maxLen-1]
-	}
-	dstBuf := (*[1 << 30]byte)(dst)[:maxLen:maxLen]
-	copy(dstBuf, bytes)
-	dstBuf[len(bytes)] = 0
-}
-
-func (w *SharedMemoryWriter) Close() {
-	if w.shmPtr != nil {
-		C.cytoplasm_v4_detach(w.shmPtr)
-	}
-}
-</file>
-
-<file path="src/kernel/julia/main.jl">
-using Pkg
-
-Pkg.activate(@__DIR__)
-
-required_pkgs = ["LinearAlgebra", "Statistics", "Printf", "HTTP", "JSON3"]
-
-for pkg in required_pkgs
-	if !haskey(Pkg.project().dependencies, pkg)
-		println("[Julia Setup] Installing missing package: $pkg...")
-		Pkg.add(pkg)
-	end
-end
-
-using Printf, HTTP, JSON3
-
-include("shm_interface.jl")
-include("sindy_pde.jl")
-
-using .SHMInterface
-using .SINDyPDE
-
-const GATEWAY_URL = "http://localhost:5000/api/v1/topology/event"
-
-function main()
-	println("=== REVALATIO II Compute Engine (Julia) ===")
-	ctx = SHMInterface.attach_shm()
-	println("[Julia Compute] Connected to Cytoplasm IV Shared Memory (512MB).")
-
-	print("[Julia Warmup] Compiling SINDy-PDE pipeline...")
-	try
-		dummy_ts = SHMInterface.read_timeseries(ctx, 10)
-		if !isempty(dummy_ts)
-			_ = SINDyPDE.fit_sindy_pde(dummy_ts)
-		end
-		println(" Done.")
-	catch err
-		println(" Skipped (waiting for live stream).")
-	end
-
-	last_run_time = 0.0
-	while true
-		hdr = SHMInterface.read_header(ctx)
-		current_time = time()
-
-		is_tda_triggered = (hdr.state_flags & UInt32(0x08)) != 0
-		is_critical = (hdr.state_flags & UInt32(0x04)) != 0
-		is_timeout = (current_time - last_run_time) > 10.0
-
-		if is_tda_triggered || is_critical || is_timeout
-			println("\n[TDA / Critical Disruption Triggered!] Re-identifying SINDy-PDE Governing Equations...")
-
-			ts = SHMInterface.read_timeseries(ctx, 120)
-			if !isempty(ts)
-				sindy_res = SINDyPDE.fit_sindy_pde(ts)
-
-				SHMInterface.write_sindy_coefficients_and_reset(ctx, sindy_res.coefficients)
-				println("[Autopoietic Loop] PDE coefficients dispatched back to SHM for R engine")
-
-				@printf("  Identified PDE : %s\n", sindy_res.equation_str)
-				@printf("  Residual Error : %.6f\n", sindy_res.residual)
-				@printf("  Re(lambda_max) : %.4f\n", hdr.re_lambda_max)
-
-				payload = (
-						calculatedAtNs     = round(Int64, time() * 1e9),
-						reLambdaMax        = Float64(hdr.re_lambda_max),
-						meanRicciCurvature = Float64(hdr.mean_ricci_curvature),
-						tdaH1Persistence   = Float64(hdr.tda_h1_persistence),
-						tdaH2Persistence   = Float64(hdr.tda_h2_persistence),
-						sindyResidual      = Float64(sindy_res.residual),
-						stateFlags         = UInt32(hdr.state_flags),
-						equation           = sindy_res.equation_str
-				)
-				@async begin
-					try
-						HTTP.post(GATEWAY_URL, ["Content-Type" => "application/json"], JSON3.write(payload); connect_timeout = 1, request_timeout = 1)
-						println("  [Gateway Sync] Disruption event dispatched to Gateway.")
-					catch err
-						println("  [Gateway Sync Warning] Gateway offline. Stored locally.")
-					end
-				end
-
-				SHMInterface.reset_tda_flag_and_mark_sindy(ctx)
-				last_run_time = current_time
-			end
-		end
-		sleep(0.1)
-	end
-end
-
-main()
-</file>
-
-<file path="src/kernel/julia/shm_interface.jl">
-module SHMInterface
-
+using LinearAlgebra
+using Statistics
 using Printf
 
-const LIB_SHM_BRIDGE = "./shm_julia_bridge.so"
+export SINDyResult,
+	fit_graph_sindy_pde,
+	graph_laplacian,
+	evaluate_rhs
 
-struct SHMHeader
-    write_index::UInt64
-    last_updated_epoch_ns::UInt64
-    active_node_count::UInt32
-    state_flags::UInt32
-    mean_ricci_curvature::Float64
-    tda_h1_persistence::Float64
-    tda_h2_persistence::Float64
-    re_lambda_max::Float64
+const TERM_NAMES = ["1", "U", "U^2", "U^3", "-L*U"]
+
+struct SINDyResult
+	equation_str::String
+
+	coefficients::Matrix{Float64}
+	residual::Float64
+	relative_residual::Float64
+
+	active_terms::Vector{String}
+	feature_count::Int
+	snapshot_count::Int
+	node_count::Int
+
+	dt::Float64
 end
 
-struct SHMContext
-    attached::Bool
+function graph_laplacian(A::Matrix{Float64})
+	N, M = size(A)
+
+	if N != M
+		throw(DimensionMismatch("Adjacency matrix must be square."))
+	end
+
+	A64 = Matrix{Float64}(A)
+	A64 .= 0.5 .* (A64 .+ A64')
+
+	for i in 1:N
+		A64[i, i] = 0.0
+	end
+
+	degree = vec(sum(A64, dims=2))
+
+	return Matrix(Diagonal(degree)) - A64
 end
 
-function attach_shm()
-    status = ccall((:julia_shm_attach, LIB_SHM_BRIDGE), Int32, ())
-    if status != 0
-        error("[SHMInterface FATAL] Cannot attach to Cytoplasm IV. Code: $status")
-    end
-    return SHMContext(true)
+function time_derivative(U::Array{Float64, 3}, dt::Float64)
+	N, D, T = size(U)
+
+	if T < 3
+		error("At least 3 snapshot required")
+	end
+
+	if !isfinite(dt) || dt <= 0.0
+		error("dt must be positive")
+	end
+
+	Udot = zeros(Float64, N, D, T - 2)
+
+	for t in 2:T - 1
+		Udot[:, :, t - 1] .= (U[:, :, t + 1] .- U[:, :, t - 1]) ./ (2.0 * dt)
+	end
+
+	return Udot
 end
 
-function read_header(ctx::SHMContext)
-    raw_hdr = zeros(UInt8, 256)
-    ccall((:julia_shm_read_header_raw, LIB_SHM_BRIDGE), Cvoid, (Ptr{UInt8},), raw_hdr)
 
-    write_index            = reinterpret(UInt64,  raw_hdr[1:8])[1]
-    last_updated_epoch_ns = reinterpret(UInt64,  raw_hdr[9:16])[1]
-    active_node_count     = reinterpret(UInt32,  raw_hdr[17:20])[1]
-    state_flags           = reinterpret(UInt32,  raw_hdr[21:24])[1]
-    mean_ricci            = reinterpret(Float64, raw_hdr[25:32])[1]
-    tda_h1                = reinterpret(Float64, raw_hdr[33:40])[1]
-    tda_h2                = reinterpret(Float64, raw_hdr[41:48])[1]
-    re_lambda_max         = reinterpret(Float64, raw_hdr[49:56])[1]
 
-    return SHMHeader(
-        write_index,
-        last_updated_epoch_ns,
-        active_node_count,
-        state_flags,
-        mean_ricci,
-        tda_h1,
-        tda_h2,
-        re_lambda_max
-    )
+function graph_diffusion(U::Array{Float64, 3}, L::Matrix{Float64})
+	N, D, T = size(U)
+
+	if size(L, 1) != N
+		throw(DimensionMismatch("Graph size does not match U node count."))
+	end
+
+	LU = zeros(Float64, N, D, T)
+
+	for t in 1:T
+		LU[:, :, t] .= L * U[:, :, t]
+	end
+
+	return LU 
 end
 
-function read_timeseries(ctx::SHMContext, time_steps::Int = 120)
-    out_matrix = zeros(Float64, 128, time_steps)
-    steps = ccall((:julia_shm_read_timeseries, LIB_SHM_BRIDGE), Int32,
-                  (Cint, Ptr{Cdouble}), time_steps, out_matrix)
-    if steps == 0
-        return Matrix{Float64}(undef, 0, 0)
-    end 
-    return copy(out_matrix[:, 1:steps])
+function build_library(u::Vector{Float64}, lu::Vector{Float64})
+	if length(u) != length(lu)
+		error("u and lu length mismatch")
+	end
+
+	return hcat(ones(Float64, length(u)), u, u .^ 2, u .^ 3, -lu)
 end
 
-function write_sindy_coefficients_and_reset(ctx::SHMContext, coeffs::Vector{Float64})
-    D = length(coeffs) >= 1 ? coeffs[1] : 0.0
-    lambda = length(coeffs) >= 2 ? coeffs[2] : 0.0
-    ccall((:julia_shm_write_sindy_coefficients, LIB_SHM_BRIDGE), Cvoid,
-          (Cdouble, Cdouble), D, lambda)
+function normalize_library(Theta::Matrix{Float64})
+	ThetaN = copy(Theta)
+	scales = ones(Float64, size(Theta, 2))
+
+	for j in axes(Theta, 2)
+		s = norm(Theta[:, j])
+		if s > sqrt(eps(Float64))
+			ThetaN[:, j] ./= s
+			scales[j] = s
+		end
+	end
+
+	return (ThetaN, scales)
 end
 
-function reset_tda_flag_and_mark_sindy(ctx::SHMContext)
-    ccall((:julia_shm_reset_tda_flag_and_mark_sindy, LIB_SHM_BRIDGE), Cvoid, ())
+function stlsq(Theta::Matrix{Float64}, y::Vector{Float64}; lambda::Float64 = 0.05, max_iter::Int = 15)
+	xi = Theta \ y
+
+	for _ in 1:max_iter
+		old_xi = copy(xi)
+		active = abs.(xi) .>= lambda
+
+		if !any(active)
+			xi .= 0.0
+			break
+		end
+
+		new_xi = zeros(Float64, length(xi))
+		new_xi[active] .= Theta[:, active] \ y
+		xi = new_xi
+
+		if norm(xi .- old_xi) <= 1e-10 * max(norm(old_xi), 1.0)
+			break
+		end
+	end
+
+	return xi
 end
 
-end # module
-</file>
+function format_equation(Xi::Matrix{Float64})
+	c0 = median(Xi[1, :])
+	c1 = median(Xi[2, :])
+	c2 = median(Xi[3, :])
+	c3 = median(Xi[4, :])
+	diffusion = median(Xi[5, :])
 
-<file path="src/kernel/julia/shm_julia_bridge.c">
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <stddef.h>
-#include "../../../include/cytoplasm_v4.h"
+	return @sprintf("delu/delt = %.4g %+.5gu %+.4gu^2 %+4gu^3 - %.4g L u", c0, c1, c2, c3, diffusion)
+end
 
-static CytoplasmV4 *g_cytoplasm = NULL;
+function fit_graph_sindy_pde(U::Array{Float64, 3}, A::AbstractMatrix{<:Real},dt::Float64; lambda::Float64 = 0.05, max_iter::Int = 15, valid_mask::Union{Nothing, BitMatrix} = nothing)
+	N, D, T = size(U)
 
-typedef struct {
-	uint64_t write_index;
-	uint64_t last_updated_epoch_ns;
-	uint32_t active_node_count;
-	uint32_t state_flags;
-	double mean_ricci_curvature;
-	double tda_h1_persistence;
-	double tda_h2_persistence;
-	double re_lambda_max;
-} JuliaHeaderBuffer;
+	if size(A) != (N, N)
+		throw(DimensionMismatch("A must have size ($N, $N)"))
+	end
 
-int julia_shm_attach(void) {
-	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY, sizeof(CytoplasmV4), 0666);
-	if (shmid < 0) {
-		return -1;
-	}
+	if T < 5
+		error("At least 5 snapshots required")
+	end
 
-	void *shm_ptr = shmat(shmid, NULL, 0);
-	if (shm_ptr == (void *)-1) {
-		return -2;
-	}
+	if valid_mask !== nothing && size(valid_mask) != (N, T)
+		throw(DimensionMismatch("valid must have size ($N, $T)"))
+	end
 
-	g_cytoplasm = (CytoplasmV4 *)shm_ptr;
-	return 0;
-}
+	L = graph_laplacian(A)
+	Udot = time_derivative(U, dt)
+	LU_all = graph_diffusion(U, L)
+	U_mid = U[:, :, 2:T - 1]
+	LU_mid = LU_all[:, :, 2:T-1]
+	derivative_valid = if valid_mask === nothing
+		trues(N, T - 2)
+	else
+		valid_mask[:, 1:T - 2] .& valid_mask[:, 2:T - 1] .& valid_mask[:, 3:T]
+	end
+	Xi = zeros(Float64, 5, D)
+	total_squared_error = 0.0
+	total_target_energy = 0.0
+	total_samples = 0
 
-void julia_shm_read_header_raw(void *out_hdr) {
-	if (g_cytoplasm == NULL || out_hdr == NULL) {
-		return;
-	}
+	for d in 1:D
+		u = vec(U_mid[:, d, :])
+		lu = vec(LU_mid[:, d, :])
+		y = vec(Udot[:, d, :])
+		valid = vec(derivative_valid)
+		u = u[valid]
+		lu = lu[valid]
+		y = y[valid]
 
-	JuliaHeaderBuffer *buf = (JuliaHeaderBuffer *)out_hdr;
-	buf->write_index = g_cytoplasm->header.write_index;
-	buf->last_updated_epoch_ns = g_cytoplasm->header.last_updated_epoch_ns;
-	buf->active_node_count = g_cytoplasm->header.active_node_count;
-	buf->state_flags = g_cytoplasm->header.state_flags;
-	buf->mean_ricci_curvature = g_cytoplasm->header.mean_ricci_curvature;
-	buf->tda_h1_persistence = g_cytoplasm->coefficients.tda_h1_persistence;
-	buf->tda_h2_persistence = g_cytoplasm->coefficients.tda_h2_persistence;
-	buf->re_lambda_max = g_cytoplasm->header.re_lambda_max;
-}
+		if length(y) < 20
+			continue
+		end
 
-int julia_shm_read_timeseries(int time_steps, double *out_matrix) {
-	if (g_cytoplasm == NULL) {
-		return 0;
-	}
+		Theta = build_library(u, lu)
+		ThetaN, scales = normalize_library(Theta)
+		xi_normalized = stlsq(ThetaN, y; lambda=lambda, max_iter=max_iter)
+		xi = xi_normalized ./ scales
+		Xi[:, d] .= xi
+		prediction = Theta * xi
+		error_vector = prediction .- y
+		total_squared_error += sum(abs2, error_vector)
+		total_target_energy += sum(abs2, y)
+		total_samples += length(y)
+	end
 
-	uint64_t w_idx = g_cytoplasm->header.write_index;
-	int steps = (time_steps > (int)VECTOR_RING_CAPACITY) ? (int)VECTOR_RING_CAPACITY : time_steps;
+	if total_samples == 0
+		error("No valid SINDy samples")
+	end
 
-	for (int t = 0; t < steps; t++) {
-		uint64_t target_idx = (w_idx > (uint64_t)t) ? (w_idx - 1 - t) : 0;
-		uint32_t slot = (uint32_t)(target_idx % VECTOR_RING_CAPACITY);
+	residual = sqrt(total_squared_error / total_samples)
+	relative_residual = sqrt(total_squared_error / max(total_target_energy, eps(Float64)))
+	active_terms = String[]
 
-		for (int d = 0; d < VECTOR_DIM; d++) {
-			out_matrix[d + t * VECTOR_DIM] = (double)g_cytoplasm->vectors[slot].values[d];
-		}
-	}
-	return steps;
-}
+	for term in 1:5
+		if any(abs.(Xi[term, :]) .> lambda)
+			push!(active_terms, TERM_NAMES[term])
+		end
+	end
 
-void julia_shm_write_sindy_coefficients(double diffusion_D, double reaction_lambda) {
-	if (g_cytoplasm == NULL) {
-		return;
-	}
+	equation = format_equation(Xi)
 
-	g_cytoplasm->header.re_lambda_max = reaction_lambda;
+	return SINDyResult(equation, Xi, residual, relative_residual, active_terms, D, T, N, dt)
+end
 
-	for (int d = 0; d < VECTOR_DIM; d++) {
-		g_cytoplasm->coefficients.diffusion_tensor[d] = diffusion_D;
-		g_cytoplasm->coefficients.c1_diag[d] = reaction_lambda;
-	}
-}
+function evaluate_rhs(result::SINDyResult, U::Matrix{Float64}, A::AbstractMatrix{<:Real})
+	N, D = size(U)
 
-void julia_shm_reset_tda_flag_and_mark_sindy(void) {
-	if (g_cytoplasm == NULL) {
-		return;
-	}
-	uint32_t clear_mask = (uint32_t)(STATE_FLAG_CRITICAL | STATE_FLAG_TDA_DISRUPTION | STATE_FLAG_PERTURBED);
-	g_cytoplasm->header.state_flags &= ~clear_mask;
-}
+	if D != result.feature_count
+		throw(DimensionMismatch("Feature dimension mismatch"))
+	end
 
-void julia_shm_detach(void) {
-	if (g_cytoplasm != NULL) {
-		shmdt((void *)g_cytoplasm);
-		g_cytoplasm = NULL;
-	}
-}
+	L = graph_laplacian(A)
+	LU = L * U
+	rhs = zeros(Float64, N, D)
+
+	for d in 1:D
+		c0 = result.coefficients[1, d]
+		c1 = result.coefficients[2, d]
+		c2 = result.coefficients[3, d]
+		c3 = result.coefficients[4, d]
+		diffusion = result.coefficients[5, d]
+
+		rhs[:, d] .= c1 .* U[:, d] .+ c2 .* U[:, d] .+ c3 .* U[:, d] .- diffusion .* LU[:, d]
+	end
+
+	return rhs
+end
+
+end #module
 </file>
 
 <file path="src/kernel/r/shm_r_bridge.c">
@@ -2777,6 +2320,152 @@ void r_shm_detach(void) {
 }
 </file>
 
+<file path="src/web/src/components/TelemetryPanel.css">
+.telemetry-panel {
+  width: 32%;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  backdrop-filter: blur(12px);
+  overflow-y: auto;
+}
+
+.panel-section-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 6px;
+}
+
+.pde-box {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+	justify-content: flex-start;
+	overflow-x: auto;
+  color: var(--color-accent);
+}
+
+.gauge-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gauge-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gauge-label-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.gauge-bar-bg {
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.gauge-bar-fill {
+  height: 100%;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+</file>
+
+<file path="src/web/src/hooks/useAutopoieticStream.ts">
+import { useEffect, useState } from 'react';
+
+export interface TriggerPost {
+  slotIndex: number;
+  uri: string;
+  authorDid: string;
+  text: string;
+  contributionScore: number;
+  localRicciCurvature: number;
+  structuralRole: string;
+}
+
+export interface TelemetryEvent {
+  writeIndex?: number;
+  stateFlags: number;
+  reLambdaMax: number;
+  meanRicciCurvature: number;
+  tdaH1Persistence: number;
+  tdaH2Persistence: number;
+  residual: number;
+  equation?: string;
+}
+
+export const useAutopoieticStream = () => {
+  const [connected, setConnected] = useState(false);
+  const [event, setEvent] = useState<TelemetryEvent | null>(null);
+  const [triggerPosts, setTriggerPosts] = useState<TriggerPost[]>([]);
+
+  useEffect(() => {
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.hostname}:5000/ws/topology`;
+    const socket = new WebSocket(wsUrl);
+
+    socket.onopen = () => setConnected(true);
+    socket.onclose = () => setConnected(false);
+    socket.onerror = () => setConnected(false);
+
+		socket.onmessage = (msg) => {
+			try {
+				const data = JSON.parse(msg.data);
+				const m = data.metrics || data.Metrics || data;
+
+				if (m) {
+					// snake_case, camelCase, PascalCase の全パターンに対応
+					const meanRicci = m.meanRicciCurvature ?? m.mean_ricci_curvature ?? m.MeanRicciCurvature ?? 0;
+					const h1 = m.tdaH1Persistence ?? m.tda_h1_persistence ?? m.TdaH1Persistence ?? 0;
+					const h2 = m.tdaH2Persistence ?? m.tda_h2_persistence ?? m.TdaH2Persistence ?? 0;
+					const reLambda = m.reLambdaMax ?? m.re_lambda_max ?? m.ReLambdaMax ?? -0.45;
+					const residual = m.sindyResidual ?? m.sindy_residual ?? m.SindyResidual ?? 0;
+					const flags = m.stateFlags ?? m.state_flags ?? m.StateFlags ?? 0;
+					const eq = m.equation ?? m.Equation ?? '';
+
+					setEvent({
+						writeIndex: data.spectrumId ?? data.SpectrumId ?? 0,
+						stateFlags: flags,
+						reLambdaMax: reLambda,
+						meanRicciCurvature: meanRicci,
+						tdaH1Persistence: h1,
+						tdaH2Persistence: h2,
+						residual: residual,
+						equation: eq,
+					});
+				}
+
+				const posts = data.triggerPosts || data.TriggerPosts || data.trigger_posts;
+				if (posts && Array.isArray(posts)) {
+					setTriggerPosts((prev) => [...posts, ...prev].slice(0, 50));
+				}
+			} catch (e) {
+				console.error('[WebSocket Parse Error]', e);
+			}
+		};	
+    return () => socket.close();
+  }, []);
+
+  return { connected, event, triggerPosts };
+};
+</file>
+
 <file path=".gitignore">
 # OS & Editor
 .DS_Store
@@ -2822,6 +2511,337 @@ node_modules/
 # Database & Logs
 *.log
 *.so
+</file>
+
+<file path="src/gateway/GatewayService/Program.cs">
+using System.Collections.Concurrent;
+using System.Net.WebSockets;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Dapper;
+using GatewayService.Services;
+using MySqlConnector;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddSingleton<CytoplasmV4Reader>();
+
+// HTTP JSON のバインド設定（snake_case も camelCase もケースインセンシティブで柔軟受取）
+builder.Services.ConfigureHttpJsonOptions(options => {
+    options.SerializerOptions.PropertyNameCaseInsensitive = true;
+    options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+});
+
+var app = builder.Build();
+
+app.UseWebSockets();
+var wsClients = new ConcurrentBag<WebSocket>();
+
+app.MapPost("/api/v1/topology/event", async (TopologyEventRequest request, CytoplasmV4Reader reader, IConfiguration config) => {
+		Console.WriteLine($"[Gateway Recived] Ricce: {request.MeanRicciCurvature}, ReLambda: {request.ReLambdaMax}, H1: {request.TdaH1Persistence}");
+
+		var triggerPosts = reader.ReadTopTriggerPosts();
+		Console.WriteLine($"[Gateway Trigger Check] Trigger Count: {triggerPosts.Count}");
+
+		if (triggerPosts.Count == 0) {
+				triggerPosts.Add(new TriggerPostDto(
+						1,
+						"at://did:plc:test/app.bsky.feed.post/123",
+						"did:plc:revelatio_demo",
+						"【幾何学的特異点検知】言論空間の局所曲率が臨界面に達しました。",
+						0.9852,
+						-0.8921,
+						"SINGULARITY_CATALYST"
+				));
+		}
+
+    string dbConnStr = config.GetConnectionString("MariaDB")
+        ?? "Server=localhost;Database=revelatio_db;Uid=root;Pwd=password;";
+
+    long spectrumId = 0;
+
+    await using (var conn = new MySqlConnection(dbConnStr)) {
+        await conn.OpenAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
+        try {
+            const string sqlSpectrum = @"
+                INSERT INTO spectrum_history_v2
+                (calculated_at_ns, re_lambda_max, mean_ricci_curvature, tda_h1_persistence, tda_h2_persistence, sindy_residual, state_flags)
+                VALUES (@CalculatedAtNs, @ReLambdaMax, @MeanRicciCurvature, @TdaH1Persistence, @TdaH2Persistence, @SindyResidual, @StateFlags);
+                SELECT LAST_INSERT_ID()";
+
+            spectrumId = await conn.ExecuteScalarAsync<long>(sqlSpectrum, new {
+                CalculatedAtNs = request.CalculatedAtNs,
+                ReLambdaMax = request.ReLambdaMax,
+                MeanRicciCurvature = request.MeanRicciCurvature,
+                TdaH1Persistence = request.TdaH1Persistence,
+                TdaH2Persistence = request.TdaH2Persistence,
+                SindyResidual = request.SindyResidual,
+                StateFlags = request.StateFlags
+            }, tx);
+
+            if (triggerPosts.Count > 0) {
+                const string sqlPosts = @"
+                    INSERT INTO critical_trigger_posts_v2
+                    (spectrum_id, slot_index, post_uri, author_did, post_text, contribution_score, local_ricci_curvature, structural_role)
+                    VALUES (@SpectrumId, @SlotIndex, @Uri, @AuthorDid, @Text, @ContributionScore, @LocalRicciCurvature, @StructuralRole);";
+
+                var postEntities = triggerPosts.Select(p => new {
+                    SpectrumId = spectrumId,
+                    SlotIndex = p.SlotIndex,
+                    Uri = p.Uri,
+                    AuthorDid = p.AuthorDid,
+                    Text = p.Text,
+                    ContributionScore = p.ContributionScore,
+                    LocalRicciCurvature = p.LocalRicciCurvature,
+                    StructuralRole = p.StructuralRole
+                });
+
+                await conn.ExecuteAsync(sqlPosts, postEntities, tx);
+            }
+
+            await tx.CommitAsync();
+        } catch (Exception ex) {
+            await tx.RollbackAsync();
+            Console.WriteLine($"[DB Error] Transaction failed: {ex.Message}");
+            return Results.Problem("Database persistence failed.", statusCode: 500);
+        }
+    }
+
+    var jsonOptions = new JsonSerializerOptions {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
+
+    // 引数に jsonOptions を渡して camelCase 化を強制
+    var payload = JsonSerializer.Serialize(new {
+        spectrumId,
+        metrics = request,
+        triggerPosts
+    }, jsonOptions);
+
+    byte[] bytes = Encoding.UTF8.GetBytes(payload);
+    var deadSockets = new List<WebSocket>();
+
+    foreach (var socket in wsClients) {
+        if (socket.State == WebSocketState.Open) {
+            _ = socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+        } else {
+            deadSockets.Add(socket);
+        }
+    }
+
+    foreach (var dead in deadSockets) {
+        wsClients.TryTake(out _);
+    }
+
+    return Results.Ok(new { status = "ACCEPTED", spectrumId, particleCount = triggerPosts.Count });
+});
+
+app.Map("/ws/topology", async (HttpContext context) => {
+    if (context.WebSockets.IsWebSocketRequest) {
+        using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+        wsClients.Add(webSocket);
+        Console.WriteLine($"[WebSocket] Client connected. Total active: {wsClients.Count}");
+
+        var buffer = new byte[1024];
+        while (webSocket.State == WebSocketState.Open) {
+            var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+            if (result.MessageType == WebSocketMessageType.Close) {
+                break;
+            }
+        }
+
+        wsClients.TryTake(out _);
+        Console.WriteLine("[WebSocket] Client disconnected.");
+    } else {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+    }
+});
+
+app.Run();
+
+// DTO: 属性を外し C# / Minimal API の柔軟ケースバインドに任せる
+public record TopologyEventRequest(
+    long CalculatedAtNs,
+    double ReLambdaMax,
+    double MeanRicciCurvature,
+    double TdaH1Persistence,
+    double TdaH2Persistence,
+    double SindyResidual,
+    uint StateFlags,
+    string? Equation
+);
+</file>
+
+<file path="src/ingester/shm_writer.go">
+package main
+
+/*
+#cgo CPPFLAGS: -I${SRCDIR}/../../include
+#include "cytoplasm_v4.h"
+
+CytoplasmV4* cytoplasm_v4_attach(int *shmid_out);
+int cytoplasm_v4_detach(CytoplasmV4 *cytoplasm);
+void cytoplasm_v4_write_particle(CytoplasmV4 *cytoplasm, uint64_t write_idx, uint32_t slot_id, uint32_t role, double score, double ricci, uint64_t now_ns);
+*/
+import "C"
+
+import (
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
+	"unsafe"
+)
+
+const invalidSlotID = ^uint64(0)
+
+type SharedMemoryWriter struct {
+	shmPtr    *C.CytoplasmV4
+	shmID     C.int
+	nodeMap   map[string]int
+	nodeCount int
+	nodeMu sync.Mutex
+	writeMu sync.Mutex
+}
+
+func NewSharedMemoryWriter() (*SharedMemoryWriter, error) {
+	var shmID C.int
+	ptr := C.cytoplasm_v4_attach(&shmID)
+	if ptr == nil {
+		return nil, fmt.Errorf("failed to attach to Cytoplasm IV 512MB shared memory")
+	}
+
+	return &SharedMemoryWriter{
+		shmPtr:  ptr,
+		shmID:   shmID,
+		nodeMap: make(map[string]int),
+	}, nil
+}
+
+func (w *SharedMemoryWriter) getOrAssignNodeIndex(did string) int {
+	w.nodeMu.Lock()
+	defer w.nodeMu.Unlock()
+
+	if idx, exists := w.nodeMap[did]; exists {
+		return idx
+	}
+
+	if w.nodeCount < C.GRAPH_MAX_NODES {
+		idx := w.nodeCount
+		w.nodeMap[did] = idx
+		w.nodeCount++
+		atomic.StoreUint32((*uint32)(unsafe.Pointer(&w.shmPtr.header.active_node_count)), uint32(w.nodeCount))
+		return idx
+	}
+
+	hash := 0
+	for _, ch := range did {
+		hash = (hash*31 + int(ch)) % C.GRAPH_MAX_NODES
+	}
+	return hash
+}
+
+func (w *SharedMemoryWriter) WritePost(uri, authorDID, text string, vector [128]float32, targetDID string) uint64 {
+	w.writeMu.Lock()
+	defer w.writeMu.Unlock()
+
+	nowNs := uint64(time.Now().UnixNano())
+
+	// 1. Atomic Index Increment
+	writeIdx := atomic.LoadUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.write_index)))
+
+	// 2. Vector Ring Buffer Write (~192MB Zone)
+	vSlotIdx := writeIdx % C.VECTOR_RING_CAPACITY
+	vSlot := &w.shmPtr.vectors[vSlotIdx]
+
+	atomic.StoreUint64((*uint64)(unsafe.Pointer(&vSlot.slot_id)),invalidSlotID)
+
+	vSlot.timestamp_ns = C.uint64_t(nowNs)
+
+	nodeIdx := w.getOrAssignNodeIndex(authorDID)
+
+	vSlot.node_index = C.uint32_t(nodeIdx)
+	vSlot.flags = 0
+
+	for i := 0; i < C.VECTOR_DIM; i++ {
+		vSlot.values[i] = C.float(vector[i])
+	}
+
+	atomic.StoreUint64((*uint64)(unsafe.Pointer(&vSlot.slot_id)),writeIdx)
+
+	// 3. Text LRU Buffer Write (~320MB Zone)
+	tSlotIdx := writeIdx % C.TEXT_LRU_CAPACITY
+	tSlot := &w.shmPtr.text_lru[tSlotIdx]
+	tSlot.slot_id = C.uint64_t(writeIdx)
+	tSlot.timestamp_ns = C.uint64_t(nowNs)
+
+	copyCString(unsafe.Pointer(&tSlot.uri[0]), uri, C.TEXT_URI_MAX_LEN)
+	copyCString(unsafe.Pointer(&tSlot.author_did[0]), authorDID, C.TEXT_AUTHOR_MAX_LEN)
+	copyCString(unsafe.Pointer(&tSlot.text[0]), text, C.TEXT_BODY_MAX_LEN)
+
+	// 4. Graph Adjacency Matrix Update
+	if targetDID != "" {
+		srcIdx := w.getOrAssignNodeIndex(authorDID)
+		dstIdx := w.getOrAssignNodeIndex(targetDID)
+
+		weightPtr := &w.shmPtr.adjacency_matrix.weights[srcIdx][dstIdx]
+		currentWeight := float32(*weightPtr)
+		newWeight := currentWeight*0.95 + 1.0
+		if newWeight > 10.0 {
+			newWeight = 10.0
+		}
+		*weightPtr = C.float(newWeight)
+	}
+
+	// 5. Particle Output Area Update 
+	var role uint32
+	if targetDID != "" {
+		role = C.ROLE_VORTICITY_CENTER
+	} else if len(text) > 120 {
+		role = C.ROLE_BOUNDARY_BREAKER
+	} else {
+		role = C.ROLE_SINGULARITY_CATALYST
+	}
+
+	score := 0.75 + float64(writeIdx%25)/100.0
+	ricci := -0.10 - float64(writeIdx%40)/100.0
+
+	C.cytoplasm_v4_write_particle(
+		w.shmPtr,
+		C.uint64_t(writeIdx),
+		C.uint32_t(tSlotIdx),
+		C.uint32_t(role),
+		C.double(score),
+		C.double(ricci),
+		C.uint64_t(nowNs),
+	)
+
+	atomic.StoreUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.last_updated_epoch_ns)), nowNs)
+
+	atomic.StoreUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.write_index)), writeIdx + 1)
+
+	return writeIdx
+}
+
+func copyCString(dst unsafe.Pointer, src string, maxLen int) {
+	bytes := []byte(src)
+	if len(bytes) >= maxLen {
+		bytes = bytes[:maxLen-1]
+	}
+	dstBuf := (*[1 << 30]byte)(dst)[:maxLen:maxLen]
+	copy(dstBuf, bytes)
+	dstBuf[len(bytes)] = 0
+}
+
+func (w *SharedMemoryWriter) Close() {
+	if w.shmPtr != nil {
+		C.cytoplasm_v4_detach(w.shmPtr)
+	}
+}
 </file>
 
 <file path="src/kernel/r/ricci_tda_kernel.R">
@@ -3000,6 +3020,602 @@ main_loop <- function() {
 
 if (sys.nframe() == 0) {
 	main_loop()
+}
+</file>
+
+<file path="src/kernel/julia/main.jl">
+using Pkg
+
+Pkg.activate(@__DIR__)
+
+required_pkgs = ["LinearAlgebra", "Statistics", "Printf", "HTTP", "JSON3"]
+
+for pkg in required_pkgs
+	if !haskey(Pkg.project().dependencies, pkg)
+		println("[Julia Setup] Installing missing package: $pkg...")
+		Pkg.add(pkg)
+	end
+end
+
+using Printf, HTTP, JSON3
+
+include("shm_interface.jl")
+include("sindy_pde.jl")
+
+using .SHMInterface
+using .SINDyPDE
+
+const GATEWAY_URL = "http://localhost:5000/api/v1/topology/event"
+const MAX_NODES = 256
+const TIME_STEPS = 120
+const EVENTS_PER_SNAPSHOT = 32
+
+function identify_model(ctx::SHMContext)
+	U, A, dt, snapshot_times, valid = SHMInterface.read_graph_snapshots(ctx, MAX_NODES, TIME_STEPS; events_per_snapshot=EVENTS_PER_SNAPSHOT)
+
+	if isempty(U)
+		println("[SINDy] No events available.")
+
+		return nothing
+	end
+
+	N, D, T = size(U)
+
+	if N < 2
+		println("[SINDy] Need at least 2 nodes.")
+
+		return nothing
+	end
+
+	if T < 5
+		println("[SINDy] Need at least 5 snapshots.")
+
+		return nothing
+	end
+
+	if !isfinite(dt) || dt <= 0.0
+		println("[SINDy] Invalid dt: ", dt)
+
+		return nothing
+	end
+
+	valid_count = count(valid)
+
+	println("[SINDy] snapshots=", T, " nodes=", N, " features=", D, " dt=", dt, " valid=", valid_count)
+
+	if sum(abs,A) <= sqrt(eps(Float64))
+		println("[SINDy Warning] " * "Adjacency is empty. " * "Diffusion term will not be indentifiable.")
+	end
+
+	result = SINDyPDE.fit_graph_sindy_pde(U, A, dt; lambda=0.05, max_iter=15, valid_mask=valid)
+
+	println("[SINDy] Equation: ", result.equation_str)
+	@printf("[SINDy] RMSE: %.8f\n", result.residual)
+	@printf("[SINDy] Relative residual: %.8f\n", result.relative_residual)
+	println("[SINDy] Active terms: ", join(result.active_terms, ", "))
+
+	fit_timestamp_ns = UInt64(round(time() * 1.0e9))
+
+	SHMInterface.write_sindy_model(ctx, result.coefficients, result.residual, result.relative_residual, fit_timestamp_ns)
+
+	println("[SINDy] Model written to SHM.")
+
+	return result
+end
+
+function send_gateway_event(hdr::SHMHeader, result::SINDyResult)
+	payload = (calculatedAtNs = round(Int64, time() * 1.0e9),
+						 reLambdaMax = Float64(hdr.re_lambda_max),
+						 meanRicciCurvature = Float64(hdr.mean_ricci_curvature),
+						 tdaH1Persistence = Float64(hdr.tda_h1_persistence),
+						 tdaH2Persistence = Float64(hdr.tda_h2_persistence),
+						 sindyResidual = Float64(result.residual),
+						 stateFlags = UInt32(hdr.state_flags),
+						 equation = result.equation_str)
+
+	@async begin
+		try
+			HTTP.post(GATEWAY_URL,["Content-Type" => "application/json"],
+								JSON3.write(payload);
+								connect_timeout=1,
+								request_timeout=1)
+
+			println("[Gateway] Event dispatched.")
+		catch err
+			println("[Gateway Warning] ", err)
+		end
+	end
+end
+
+function main()
+	println("=== REVELATIO II Graph / Vector SINDy-PDE ===")
+	ctx = SHMInterface.attach_shm()
+	println("[Julia] Attched to Cytoplasm IV.")
+
+	last_run_time = 0.0
+
+	try
+		while true
+			hdr = SHMInterface.read_header(ctx)
+			current_time = time()
+			is_tda_triggered = (hdr.state_flags & UInt32(0x08)) != 0
+			is_critical = (hdr.state_flags & UInt32(0x04)) != 0
+			is_timeout = (current_time - last_run_time) > 10.0
+
+			if(is_tda_triggered || is_critical || is_timeout)
+				println()
+				println("[SINDy] Re-identifying governing equation...")
+
+				try
+					result = identify_model(ctx)
+
+					if result !== nothing
+						send_gateway_event(hdr, result)
+						SHMInterface.reset_tda_flag_and_mark_sindy(ctx)
+						last_run_time = current_time
+					end
+				catch err
+					println("[SINDy Error]", err)
+					showerror(stderr, err)
+					println()
+				end
+			end
+
+			sleep(0.1)
+		end
+	finally
+		SHMInterface.detach_shm(ctx)
+	end
+end
+
+main()
+</file>
+
+<file path="src/kernel/julia/shm_interface.jl">
+module SHMInterface
+
+using Printf
+
+const LIB_SHM_BRIDGE = "./shm_julia_bridge.so"
+
+export SHMHeader,
+			 SHMContext,
+			 attach_shm,
+			 detach_shm,
+			 read_header,
+			 read_graph_snapshots,
+			 write_sindy_model,
+			 reset_tda_flag_and_mark_sindy
+
+struct SHMHeader
+    write_index::UInt64
+    last_updated_epoch_ns::UInt64
+    active_node_count::UInt32
+    state_flags::UInt32
+    mean_ricci_curvature::Float64
+    tda_h1_persistence::Float64
+    tda_h2_persistence::Float64
+    re_lambda_max::Float64
+end
+
+struct SHMContext
+    attached::Bool
+end
+
+function check_attached(ctx::SHMContext)
+	if !ctx.attached
+		error("[SHMInterface] Cytoplasm IV is not attached.")
+	end
+end
+
+function attach_shm()
+    status = ccall((:julia_shm_attach, LIB_SHM_BRIDGE), Int32, ())
+    if status != 0
+        error("[SHMInterface FATAL] Cannot attach to Cytoplasm IV. Code: $status")
+    end
+    return SHMContext(true)
+end
+
+function detach_shm(ctx::SHMContext)
+	if ctx.attached
+		ccall((:julia_shm_detach, LIB_SHM_BRIDGE), Cvoid, ())
+	end
+
+	return nothing
+end
+
+function read_header(ctx::SHMContext)::SHMHeader
+	check_attached(ctx)
+	raw = Ref(SHMHeader(UInt64(0), UInt64(0), UInt32(0), UInt32(0), 0.0, 0.0, 0.0, 0.0))
+
+
+	ccall((:julia_shm_read_header_raw, LIB_SHM_BRIDGE), Cvoid, (Ref{SHMHeader},), raw)
+
+	return raw[]
+end
+
+function read_recent_events(ctx::SHMContext, max_events::Int)
+	if max_events <= 0
+		error("max_events must be > 0")
+	end
+
+	vectors = zeros(Float64, 128, max_events)
+	nodes = zeros(UInt32, max_events)
+	timestamps = zeros(UInt64, max_events)
+	count = ccall((:julia_shm_read_recent_events, LIB_SHM_BRIDGE), Cint, (Cint, Ptr{Cdouble}, Ptr{UInt32}, Ptr{UInt64}), max_events, vectors, nodes, timestamps)
+
+	if count <= 0
+		return (vectors = zeros(Float64, 128, 0), nodes = UInt32[], timestamps = UInt64[])
+	end
+
+	n = Int(count)
+	
+	return (vectors = copy(vectors[:, 1:n]), nodes = copy(nodes[1:n]), timestamps = copy(timestamps[1:n]))
+end
+
+function read_adjacency(ctx::SHMContext, max_nodes::Int)
+	A = zeros(Float64, max_nodes, max_nodes)
+	active_nodes = ccall((:julia_shm_read_adjacency, LIB_SHM_BRIDGE), Cint, (Cint, Ptr{Cdouble}), max_nodes, A)
+
+	return(A, max(Int(active_nodes), 0))
+end
+
+function reconstruct_snapshots(vectors::Matrix{Float64}, nodes::Vector{UInt32}, timestamps::Vector{UInt64}, node_count::Int, time_steps::Int)
+	E = length(timestamps)
+
+	if E == 0
+		return (zeros(Float64, node_count, 128, time_steps), zeros(UInt64, time_steps), 0.0, falses(node_count, time_steps))
+	end
+
+	if (size(vectors, 2) != E || length(nodes) != E)
+		error("Event dimensions do not match")
+	end
+
+	if time_steps < 3
+		error("time_steps must be > 3")
+	end
+
+	order = sortperm(timestamps)
+	timestamps = timestamps[order]
+	nodes = nodes[order]
+	vectors = vectors[:, order]
+	t_min = timestamps[1]
+	t_max = timestamps[end]
+
+	if t_max <= t_min
+		return(zeros(Float64, node_count, 128, time_steps), fill(t_min, time_steps), 0.0, falses(node_count, time_steps))
+	end
+
+	span_ns = Float64(t_max - t_min)
+	dt = span_ns / Float64(time_steps - 1) / 1.0e9
+	snapshot_times = Vector{UInt64}(undef, time_steps)
+
+	for t in 1:time_steps
+		alpha = Float64(t - 1) / Float64(time_steps - 1)
+		snapshot_times[t] = t_min + UInt64(round(alpha * span_ns))
+	end
+
+	observed = zeros(Float64, node_count, 128, time_steps)
+	has_observation = falses(node_count, time_steps)
+
+	for e in 1:E
+		node = Int(nodes[e]) + 1
+		if !(1 <= node <= node_count)
+			continue
+		end
+
+		alpha = Float64(timestamps[e] - t_min) / span_ns
+		snapshot = clamp(round(Int, alpha * Float64(time_steps - 1)) + 1, 1, time_steps)
+		observed[node, :, snapshot] .= vectors[:, e]
+		has_observation[node, snapshot] = true
+	end
+
+	U = zeros(Float64, node_count, 128, time_steps)
+	valid = falses(node_count, time_steps)
+	current = zeros(Float64, node_count, 128)
+	seen = falses(node_count)
+
+	for t in 1:time_steps
+		for node in 1: node_count
+			if has_observation[node, t]
+				current[node, :] .= observed[node, :, t]
+				seen[node] = true
+			end
+
+			if seen[node]
+				valid[node, t] = true
+			end
+		end
+
+		U[:, :, t] .= current
+	end
+
+	return (U, snapshot_times, dt, valid)
+end
+
+function read_graph_snapshots(ctx::SHMContext, max_nodes::Int, time_steps::Int; events_per_snapshot::Int = 32)
+	max_events = max(time_steps * events_per_snapshot, time_steps)
+	events = read_recent_events(ctx, max_events)
+
+	if isempty(events.timestamps)
+		return (zeros(Float64, 0, 128, 0), zeros(Float64, 0, 0), 0.0, UInt64[], falses(0, 0))
+	end
+
+	A_full, active_nodes = read_adjacency(ctx, max_nodes)
+	max_event_node = maximum(Int.(events.nodes)) + 1
+	N = min(max(active_nodes, max_event_node), max_nodes)
+	U, snapshot_times, dt, valid = reconstruct_snapshots(events.vectors, events.nodes, events.timestamps, N, time_steps)
+	A = copy(A_full[1:N, 1:N])
+
+	return (U, A, dt, snapshot_times, valid)
+end
+
+function write_sindy_model(ctx::SHMContext,Xi::Matrix{Float64}, residual::Float64, relative_residual::Float64, fit_timestamp_ns::UInt64)
+	if size(Xi) != (5, 128)
+		error("Xi must have size (5, 128), got $(size(Xi))")
+	end
+
+	c0 = Vector{Float64}(Xi[1, :])
+	c1 = Vector{Float64}(Xi[2, :])
+	c2 = Vector{Float64}(Xi[3, :])
+	c3 = Vector{Float64}(Xi[4, :])
+	diffusion = Vector{Float64}(Xi[5, :])
+
+	active_term_mask = UInt32(0)
+
+	for term in 1:5
+		if any(abs.(Xi[term, :]) .> 1e-12)
+			active_term_mask |= UInt32(1) << UInt32(term - 1)
+		end
+	end
+
+	ccall((:julia_shm_write_sindy_model, LIB_SHM_BRIDGE), Cvoid, (Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cdouble}, Cdouble, Cdouble, UInt32, UInt64), c0, c1, c2, c3, diffusion, residual, relative_residual, active_term_mask, fit_timestamp_ns)
+
+	return nothing
+end
+
+function reset_tda_flag_and_mark_sindy(ctx::SHMContext)
+	ccall((:julia_shm_reset_tda_flag_and_mark_sindy, LIB_SHM_BRIDGE), Cvoid, ())
+
+	return nothing
+end
+
+end #module
+</file>
+
+<file path="src/kernel/julia/shm_julia_bridge.c">
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <stddef.h>
+#include "../../../include/cytoplasm_v4.h"
+
+static CytoplasmV4 *g_cytoplasm = NULL;
+
+typedef struct {
+	uint64_t write_index;
+	uint64_t last_updated_epoch_ns;
+	uint32_t active_node_count;
+	uint32_t state_flags;
+	double mean_ricci_curvature;
+	double tda_h1_persistence;
+	double tda_h2_persistence;
+	double re_lambda_max;
+} JuliaHeaderBuffer;
+
+int julia_shm_attach(void) {
+	if (g_cytoplasm != NULL) {
+		return 0;
+	}
+
+	int shmid = shmget((key_t)CYTOPLASM_V4_IPC_KEY, sizeof(CytoplasmV4), 0666);
+	if (shmid < 0) {
+		return -1;
+	}
+
+	void *shm_ptr = shmat(shmid, NULL, 0);
+	if (shm_ptr == (void *)-1) {
+		return -2;
+	}
+
+	g_cytoplasm = (CytoplasmV4 *)shm_ptr;
+	return 0;
+}
+
+void julia_shm_read_header_raw(void *out_hdr) {
+	if (g_cytoplasm == NULL || out_hdr == NULL) {
+		return;
+	}
+
+	JuliaHeaderBuffer *buf = (JuliaHeaderBuffer *)out_hdr;
+	buf->write_index = __atomic_load_n(&g_cytoplasm->header.write_index, __ATOMIC_ACQUIRE);
+	buf->last_updated_epoch_ns = __atomic_load_n(&g_cytoplasm->header.last_updated_epoch_ns, __ATOMIC_ACQUIRE);
+	buf->active_node_count = __atomic_load_n(&g_cytoplasm->header.active_node_count, __ATOMIC_ACQUIRE);
+	buf->state_flags = __atomic_load_n(&g_cytoplasm->header.state_flags, __ATOMIC_ACQUIRE);
+	buf->mean_ricci_curvature = g_cytoplasm->header.mean_ricci_curvature;
+	buf->tda_h1_persistence = g_cytoplasm->coefficients.tda_h1_persistence;
+	buf->tda_h2_persistence = g_cytoplasm->coefficients.tda_h2_persistence;
+	buf->re_lambda_max = g_cytoplasm->header.re_lambda_max;
+}
+
+int julia_shm_read_timeseries(int time_steps, double *out_matrix) {
+	if (g_cytoplasm == NULL || out_matrix == NULL || time_steps <= 0) {
+		return 0;
+	}
+
+	uint64_t write_index = __atomic_load_n(&g_cytoplasm->header.write_index, __ATOMIC_ACQUIRE);
+
+	if (write_index == 0) {
+		return 0;
+	}
+
+	uint64_t committed_count = write_index;
+	uint64_t available = committed_count;
+
+	if (available > VECTOR_RING_CAPACITY) {
+		available = VECTOR_RING_CAPACITY;
+	}
+
+	if (available > (uint64_t)time_steps) {
+		available = (uint64_t)time_steps;
+	}
+
+	uint64_t start = committed_count - available;
+	int output_count = 0;
+
+	for (uint64_t logical_index = start; logical_index < committed_count; logical_index++) {
+		uint32_t slot_index = (uint32_t)(logical_index % VECTOR_RING_CAPACITY);
+		const VectorSlot *src = &g_cytoplasm->vectors[slot_index];
+
+		uint64_t slot_id = __atomic_load_n(&src->slot_id, __ATOMIC_ACQUIRE);
+
+		if (slot_id != logical_index) {
+			continue;
+		}
+
+		if (src->timestamp_ns == 0) {
+			continue;
+		}
+		
+		for (int d = 0; d < VECTOR_DIM; d++) {
+			out_matrix[d + output_count * VECTOR_DIM] = (double)src->values[d];
+		}
+		output_count++;
+	}
+	return output_count;
+}
+
+void julia_shm_write_sindy_coefficients(double diffusion_D, double reaction_lambda) {
+	if (g_cytoplasm == NULL) {
+		return;
+	}
+
+	g_cytoplasm->header.re_lambda_max = reaction_lambda;
+
+	for (int d = 0; d < VECTOR_DIM; d++) {
+		g_cytoplasm->coefficients.diffusion_tensor[d] = diffusion_D;
+		g_cytoplasm->coefficients.c1_diag[d] = reaction_lambda;
+	}
+}
+
+void julia_shm_reset_tda_flag_and_mark_sindy(void) {
+	if (g_cytoplasm == NULL) {
+		return;
+	}
+	uint32_t clear_mask = (uint32_t)(STATE_FLAG_CRITICAL | STATE_FLAG_TDA_DISRUPTION | STATE_FLAG_PERTURBED);
+	__atomic_fetch_and(&g_cytoplasm->header.state_flags, ~clear_mask, __ATOMIC_ACQ_REL);
+}
+
+void julia_shm_detach(void) {
+	if (g_cytoplasm != NULL) {
+		shmdt((void *)g_cytoplasm);
+		g_cytoplasm = NULL;
+	}
+}
+
+int julia_shm_read_recent_events(int max_events, double *out_vectors, uint32_t *out_nodes, uint64_t *out_timestamps) {
+	if (g_cytoplasm == NULL || max_events <= 0 || out_vectors == NULL || out_nodes == NULL || out_timestamps == NULL) {
+		return 0;
+	}
+
+	uint64_t write_index = __atomic_load_n(&g_cytoplasm->header.write_index, __ATOMIC_ACQUIRE);
+
+	if (write_index == 0) {
+		return 0;
+	}
+
+	uint64_t committed_count = write_index;
+	uint64_t available = committed_count;
+
+	if (available > VECTOR_RING_CAPACITY) {
+		available = VECTOR_RING_CAPACITY;
+	}
+
+	if (available > (uint64_t)max_events) {
+		available = (uint64_t)max_events;
+	}
+
+	uint64_t start = committed_count - available;
+	int output_count = 0;
+
+	for (uint64_t logical_index = start; logical_index < committed_count; logical_index++) {
+		uint32_t slot_index = (uint32_t)(logical_index % VECTOR_RING_CAPACITY);
+		VectorSlot *slot = &g_cytoplasm->vectors[slot_index];
+
+		uint64_t slot_id = __atomic_load_n(&slot->slot_id, __ATOMIC_ACQUIRE);
+
+		if (slot_id != logical_index || slot->timestamp_ns == 0) {
+			continue;
+		}
+
+		out_nodes[output_count] = slot->node_index;
+		out_timestamps[output_count] = slot->timestamp_ns;
+
+		for (int d = 0; d < VECTOR_DIM; d++) {
+			out_vectors[d + output_count * VECTOR_DIM] = (double)slot->values[d];
+		}
+		output_count++;
+
+		if (output_count >= max_events) {
+			break;
+		}
+	}
+	return output_count;
+}
+
+int julia_shm_read_adjacency(int max_nodes, double *out_matrix) {
+	if (g_cytoplasm == NULL || out_matrix == NULL || max_nodes <= 0) {
+		return 0;
+	}
+
+	int n = max_nodes;
+
+	if (n > (int)GRAPH_MAX_NODES) {
+		n = (int)GRAPH_MAX_NODES;
+	}
+	
+	for (int j = 0; j < n; j++) {
+		for (int i = 0; i < n; i++) {
+			out_matrix[i + j * max_nodes] = (double)g_cytoplasm->adjacency_matrix.weights[i][j];
+		}
+	}
+
+	uint32_t active = g_cytoplasm->header.active_node_count;
+
+	if (active > (uint32_t)n) {
+		active = (uint32_t)n;
+	}
+
+	return (int)active;
+}
+
+void julia_shm_write_sindy_model(const double *c0, const double *c1, const double *c2, const double *c3, const double *diffusion, double residual, double relative_residual, uint32_t active_term_mask, uint64_t fit_timestamp_ns) {
+	if (g_cytoplasm == NULL || c0 == NULL || c1 == NULL || c2 == NULL || c3 == NULL || diffusion == NULL ) {
+		return;
+	}
+
+	__atomic_add_fetch(&g_cytoplasm->sindy_extended.model_generation, 1, __ATOMIC_ACQ_REL);
+
+	for (int d = 0; d < VECTOR_DIM; d++) {
+		g_cytoplasm->coefficients.c1_diag[d] = c1[d];
+		g_cytoplasm->coefficients.c2_diag[d] = c2[d];	
+		g_cytoplasm->coefficients.diffusion_tensor[d] = diffusion[d];	
+		g_cytoplasm->sindy_extended.c0_diag[d] = c0[d];		
+		g_cytoplasm->sindy_extended.c3_diag[d] = c3[d];
+	}
+
+	g_cytoplasm->coefficients.residual_error = residual;
+	g_cytoplasm->coefficients.fit_timestamp_ns = fit_timestamp_ns;
+	g_cytoplasm->sindy_extended.relative_residual = relative_residual;
+	g_cytoplasm->sindy_extended.fit_timestamp_ns = fit_timestamp_ns;
+	g_cytoplasm->sindy_extended.schema_version = 1;
+	g_cytoplasm->sindy_extended.active_term_mask = active_term_mask;
+
+	__atomic_thread_fence(__ATOMIC_RELEASE);
+	__atomic_add_fetch(&g_cytoplasm->sindy_extended.model_generation, 1, __ATOMIC_RELEASE);
 }
 </file>
 
