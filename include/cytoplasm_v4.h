@@ -27,7 +27,7 @@ extern "C" {
 #define GRAPH_MAX_NODES 256U /* Max Active Graph Nodes */
 
 /* Text LRU Buffer Configuration */
-#define TEXT_LRU_CAPACITY 16384U /* ~320 MB LRU Buffer */
+#define TEXT_LRU_CAPACITY 16370U /* ~320 MB LRU Buffer */
 #define TEXT_URI_MAX_LEN 256
 #define TEXT_AUTHOR_MAX_LEN 128
 #define TEXT_BODY_MAX_LEN 2048
@@ -36,16 +36,16 @@ extern "C" {
 #define MAX_TOP_TRIGGER_POSTS 64U
 
 /* System State Flags */
-#define STATE_FLAG_STABLE 0x00
-#define STATE_FLAG_QUIET 0x01
-#define STATE_FLAG_PERTURBED 0x02
-#define STATE_FLAG_CRITICAL 0x04
-#define STATE_FLAG_TDA_DISRUPTION 0x08
+#define STATE_FLAG_STABLE 0x00U
+#define STATE_FLAG_QUIET 0x01U
+#define STATE_FLAG_PERTURBED 0x02U
+#define STATE_FLAG_CRITICAL 0x04U
+#define STATE_FLAG_TDA_DISRUPTION 0x08U
 
 /* Structural Role Flags for Particles */
-#define ROLE_SINGULARITY_CATALYST 0x01
-#define ROLE_BOUNDARY_BREAKER 0x02
-#define ROLE_VORTICITY_CENTER 0x04
+#define ROLE_SINGULARITY_CATALYST 0x01U
+#define ROLE_BOUNDARY_BREAKER 0x02U
+#define ROLE_VORTICITY_CENTER 0x04U
 
 #pragma pack(push, 1)
 
@@ -78,7 +78,7 @@ typedef struct {
 	uint8_t reserved[160];
 } TensorCoefficientSection;
 
-/*=== 3. Particle Attribution Output Area (15,104 Bytes) ===*/
+/*=== 3. Particle Attribution Output Area (1,676 Bytes) ===*/
 
 typedef struct {
 	uint32_t slot_id;
@@ -94,6 +94,18 @@ typedef struct {
 	uint8_t reserved[128];
 } ParticleOutputArea;
 
+typedef struct {
+	uint8_t alignment_pad[4];
+	double c0_diag[VECTOR_DIM];
+	double c3_diag[VECTOR_DIM];
+	double relative_residual;
+	uint64_t model_generation;
+	uint64_t fit_timestamp_ns;
+	uint32_t schema_version;
+	uint32_t active_term_mask;
+	uint8_t reserved[92];
+} SINDyExtendedSection;
+
 /*=== 4. Adjacency Matrix Section (262,144 Bytes) ===*/
 
 typedef struct {
@@ -106,8 +118,10 @@ typedef struct {
 typedef struct {
 	uint64_t slot_id;
 	uint64_t timestamp_ns;
+	uint32_t node_index;
+	uint32_t flags;
 	float values[VECTOR_DIM]; /* 128-dimentional projected feature vector */
-	uint8_t reserved[240];
+	uint8_t reserved[232];
 } VectorSlot;
 
 /*=== 6. Text Metadata LRU Slot Struct (20,480 Bytes per Slot) ===*/
@@ -127,15 +141,16 @@ typedef struct {
 /*=== 7. Cytoplasm IV Full Shared Memory Structure (512 MB) ===*/
 
 typedef struct {
-	HeaderSection header; /* 0x00000000 - 256 B */
-	TensorCoefficientSection coefficients; /* 0x00000100 - 3,264 B */
-	ParticleOutputArea particles_output; /* 0x00000DC0 - 1,676 B */
-	uint8_t reserved_meta[11188]; /* 0x0000144C -> to padding 0x00004000 */
+	HeaderSection header; 
+	TensorCoefficientSection coefficients; 
+	ParticleOutputArea particles_output; 
+	SINDyExtendedSection sindy_extended;
+	uint8_t reserved_meta[9012];
 	
-	AdjacencyMatrixSection adjacency_matrix; /* 0x00004000 - 262,144 B */
+	AdjacencyMatrixSection adjacency_matrix; 
 
-	VectorSlot vectors[VECTOR_RING_CAPACITY]; /* 192 MB */
-	TextSlot text_lru[TEXT_LRU_CAPACITY]; /* 320 MB */
+	VectorSlot vectors[VECTOR_RING_CAPACITY]; 
+	TextSlot text_lru[TEXT_LRU_CAPACITY]; 
 } CytoplasmV4;
 
 #pragma pack(pop)
@@ -149,10 +164,13 @@ typedef struct {
 #endif
 
 _Static_assert(sizeof(HeaderSection) == 256, "HeaderSection must be exactly 256 bytes");
-_Static_assert(sizeof(TensorCoefficientSection) == 3256 || sizeof(TensorCoefficientSection) == 3264, "TensorCoefficientSection layout check");
+_Static_assert(sizeof(TensorCoefficientSection) == 3264, "TensorCoefficientSection layout check");
+_Static_assert(sizeof(SINDyExtendedSection) == 2176, "SINDyExtendedSection must be 2176 bytes");
+_Static_assert(offsetof(CytoplasmV4, sindy_extended) == 0x144C, "SINDy extended offset mismatch");
 _Static_assert(offsetof(CytoplasmV4, adjacency_matrix) == 0x4000, "Adjacency matrix offset must be exactly 0x4000 (16KB)");
 _Static_assert(sizeof(VectorSlot) == 768, "VectorSlot size must be exactly 768 bytes");
 _Static_assert(sizeof(TextSlot) == 20480, "TextSlot size must be exactly 20,480 bytes");
+_Static_assert(sizeof(CytoplasmV4) <= CYTOPLASM_V4_SHM_SIZE, "CytoplasmV4 exceeds 512 Mib shared memory size");
 
 #ifdef __cplusplus
 }

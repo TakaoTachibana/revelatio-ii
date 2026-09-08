@@ -18,12 +18,15 @@ import (
 	"unsafe"
 )
 
+const invalidSlotID = ^uint64(0)
+
 type SharedMemoryWriter struct {
 	shmPtr    *C.CytoplasmV4
 	shmID     C.int
 	nodeMap   map[string]int
 	nodeCount int
-	mu        sync.Mutex
+	nodeMu sync.Mutex
+	writeMu sync.Mutex
 }
 
 func NewSharedMemoryWriter() (*SharedMemoryWriter, error) {
@@ -41,8 +44,8 @@ func NewSharedMemoryWriter() (*SharedMemoryWriter, error) {
 }
 
 func (w *SharedMemoryWriter) getOrAssignNodeIndex(did string) int {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	w.nodeMu.Lock()
+	defer w.nodeMu.Unlock()
 
 	if idx, exists := w.nodeMap[did]; exists {
 		return idx
@@ -64,20 +67,32 @@ func (w *SharedMemoryWriter) getOrAssignNodeIndex(did string) int {
 }
 
 func (w *SharedMemoryWriter) WritePost(uri, authorDID, text string, vector [128]float32, targetDID string) uint64 {
+	w.writeMu.Lock()
+	defer w.writeMu.Unlock()
+
 	nowNs := uint64(time.Now().UnixNano())
 
 	// 1. Atomic Index Increment
-	writeIdx := atomic.AddUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.write_index)), 1) - 1
+	writeIdx := atomic.LoadUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.write_index)))
 
 	// 2. Vector Ring Buffer Write (~192MB Zone)
 	vSlotIdx := writeIdx % C.VECTOR_RING_CAPACITY
 	vSlot := &w.shmPtr.vectors[vSlotIdx]
-	vSlot.slot_id = C.uint64_t(writeIdx)
+
+	atomic.StoreUint64((*uint64)(unsafe.Pointer(&vSlot.slot_id)),invalidSlotID)
+
 	vSlot.timestamp_ns = C.uint64_t(nowNs)
+
+	nodeIdx := w.getOrAssignNodeIndex(authorDID)
+
+	vSlot.node_index = C.uint32_t(nodeIdx)
+	vSlot.flags = 0
 
 	for i := 0; i < C.VECTOR_DIM; i++ {
 		vSlot.values[i] = C.float(vector[i])
 	}
+
+	atomic.StoreUint64((*uint64)(unsafe.Pointer(&vSlot.slot_id)),writeIdx)
 
 	// 3. Text LRU Buffer Write (~320MB Zone)
 	tSlotIdx := writeIdx % C.TEXT_LRU_CAPACITY
@@ -103,7 +118,7 @@ func (w *SharedMemoryWriter) WritePost(uri, authorDID, text string, vector [128]
 		*weightPtr = C.float(newWeight)
 	}
 
-	// 5. Particle Output Area Update (C 言語ヘルパー関数経由で安全に書き込み)
+	// 5. Particle Output Area Update 
 	var role uint32
 	if targetDID != "" {
 		role = C.ROLE_VORTICITY_CENTER
@@ -127,6 +142,8 @@ func (w *SharedMemoryWriter) WritePost(uri, authorDID, text string, vector [128]
 	)
 
 	atomic.StoreUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.last_updated_epoch_ns)), nowNs)
+
+	atomic.StoreUint64((*uint64)(unsafe.Pointer(&w.shmPtr.header.write_index)), writeIdx + 1)
 
 	return writeIdx
 }
